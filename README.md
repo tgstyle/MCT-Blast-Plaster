@@ -2,7 +2,7 @@
 - [Official Discord](https://discord.gg/ujY2mV9)<br/>
 
 # MCT Blast Plaster
-Plaster those Blasts!.<br/>
+Plaster those Blasts!<br/>
 
 # Reporting issues
 When you are reporting bugs, please attach the crash report, mod and forge version.<br/>
