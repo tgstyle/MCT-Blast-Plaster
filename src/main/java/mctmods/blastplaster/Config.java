@@ -18,7 +18,7 @@ import java.util.Arrays;
 
 public class Config extends ConfigTemplate {
 
-  private static final ForgeConfigSpec CONFIG;
+  private static final ForgeConfigSpec SPEC;
   private static final IntValue MIN_TICKS_BEFORE_HEAL;
   private static final IntValue RANDOM_TICK_VAR;
   private static final BooleanValue OVERRIDE_BLOCKS;
@@ -34,27 +34,27 @@ public class Config extends ConfigTemplate {
   private static final Map<Block, TagKey<Block>> LEAF_TO_LOG_MAP = new HashMap<>();
 
   static {
-    final ForgeConfigSpec.Builder BUILDER = builder();
-    BUILDER.push(BlastPlaster.MODID);
-    MIN_TICKS_BEFORE_HEAL = BUILDER.comment("Minimum ticks before healing starts after an explosion.")
+    final ForgeConfigSpec.Builder builder = builder();
+    builder.push(BlastPlaster.MODID);
+    MIN_TICKS_BEFORE_HEAL = builder.comment("Minimum ticks before healing starts after an explosion.")
             .defineInRange("TickStartDelay", 300, 1, 600000);
-    RANDOM_TICK_VAR = BUILDER.comment("Random tick variation added to the delay for each healing layer.")
+    RANDOM_TICK_VAR = builder.comment("Random tick variation added to the delay for each healing layer.")
             .defineInRange("TickRandomInterval", 600, 1, 600000);
-    OVERRIDE_BLOCKS = BUILDER.comment("If true, override non-air blocks during healing (e.g., replace fluids or other blocks).")
+    OVERRIDE_BLOCKS = builder.comment("If true, override non-air blocks during healing (e.g., replace fluids or other blocks).")
             .define("OverrideBlocks", true);
-    DROP_IF_ALREADY_BLOCK = BUILDER.comment("If true and OverrideBlocks is false, drop the healed block as an item if the position is occupied.")
+    DROP_IF_ALREADY_BLOCK = builder.comment("If true and OverrideBlocks is false, drop the healed block as an item if the position is occupied.")
             .define("DropBlockConflict", true);
-    HEAL_CREEPERS = BUILDER.comment("If true, heal explosions caused by creepers.")
+    HEAL_CREEPERS = builder.comment("If true, heal explosions caused by creepers.")
             .define("HealCreepers", true);
-    HEAL_NONPLAYER_TNT = BUILDER.comment("If true, heal TNT explosions not ignited by players (e.g., redstone or other entities).")
+    HEAL_NONPLAYER_TNT = builder.comment("If true, heal TNT explosions not ignited by players (e.g., redstone or other entities).")
             .define("HealNonPlayerTNT", true);
-    HEAL_WITHER = BUILDER.comment("If true, heal explosions caused by withers.")
+    HEAL_WITHER = builder.comment("If true, heal explosions caused by withers.")
             .define("HealWither", true);
-    HEAL_ALL = BUILDER.comment("If true, heal all explosions regardless of source (overrides other heal options).")
+    HEAL_ALL = builder.comment("If true, heal all explosions regardless of source (overrides other heal options).")
             .define("HealAll", false);
-    HEAL_FULL_TREES = BUILDER.comment("If true, heal entire trees when part of a tree is damaged by an explosion.")
+    HEAL_FULL_TREES = builder.comment("If true, heal entire trees when part of a tree is damaged by an explosion.")
             .define("HealFullTrees", true);
-    TREE_LOG_LEAF_PAIRS = BUILDER.comment("List of tree log tag to leaf block pairs for vanilla tree healing (format: modid:log_tag=modid:leaf_block).")
+    TREE_LOG_LEAF_PAIRS = builder.comment("List of tree log tag to leaf block pairs for vanilla tree healing (format: modid:log_tag=modid:leaf_block).")
             .defineListAllowEmpty("TreeLogLeafPairs", Arrays.asList(
                     "minecraft:oak_logs=minecraft:oak_leaves",
                     "minecraft:spruce_logs=minecraft:spruce_leaves",
@@ -65,14 +65,14 @@ public class Config extends ConfigTemplate {
                     "minecraft:mangrove_logs=minecraft:mangrove_leaves",
                     "minecraft:cherry_logs=minecraft:cherry_leaves"
             ), s -> s instanceof String);
-    MAX_TREE_SIZE = BUILDER.comment("Maximum number of blocks in a tree to allow full tree healing (prevents performance issues with very large trees).")
+    MAX_TREE_SIZE = builder.comment("Maximum number of blocks in a tree to allow full tree healing (prevents performance issues with very large trees).")
             .defineInRange("MaxTreeSize", 500, 0, 10000);
-    BUILDER.pop();
-    CONFIG = BUILDER.build();
+    builder.pop();
+    SPEC = builder.build();
   }
 
   public Config() {
-    CONFIG.setConfig(setup(BlastPlaster.MODID + "-common"));
+    SPEC.setConfig(setup(BlastPlaster.MODID + "-common"));
   }
 
   public static int getMinimumTicksBeforeHeal() {
