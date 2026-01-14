@@ -132,7 +132,7 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${version_minecraft}-${version_forge}"
-    implementation fg.deobf("curse.maven:flib-661261:6369719")
+
     implementation fg.deobf("curse.maven:dynamictrees-252818:7340373")
 }
 
