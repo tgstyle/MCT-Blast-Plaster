@@ -6,7 +6,6 @@ plugins {
     id 'idea'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '6.0.+'
-	
     id 'org.parchmentmc.librarian.forgegradle' version '1.+'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.6'
     id 'eclipse'
@@ -28,7 +27,7 @@ version = versionProps.getProperty('version')
 ext.version_buildnumber = versionProps.getProperty('build_number')?.toInteger() ?: 0
 ext.stage = versionProps.getProperty('stage') ?: ''
 
-println "-> build.gradle applying version: $version (build ${version_buildnumber})"
+println "-> build.gradle applying version: $version (build ${version_buildnumber}) ${stage}"
 
 group = 'mctmods.blastplaster'
 
@@ -38,55 +37,30 @@ tasks.withType(Jar).configureEach {
     zip64 true
 }
 
-sourceSets {
-    main {
-        resources {
-            srcDirs = [
-                    "$rootDir/src/main/resources",
-                    "$rootDir/src/generated/resources",
-            ]
-        }
-    }
-    datagen {
-        compileClasspath += main.compileClasspath
-        runtimeClasspath += main.runtimeClasspath
-        compileClasspath += main.output
-        runtimeClasspath += main.output
-    }
-    gametest {
-        compileClasspath += main.compileClasspath
-        runtimeClasspath += main.runtimeClasspath
-        compileClasspath += main.output
-        runtimeClasspath += main.output
-    }
-}
-
 ext {
     mod_id = gradleProps['mod_id']
     version_minecraft = versionProps['version_mc']
     version_forge = versionProps['version_forge']
-	
     version_parchment = versionProps['version_parchment']
-	
     mod_license = gradleProps['mod_license']
     mod_name = gradleProps['mod_name']
     mod_authors = gradleProps['mod_authors']
     mod_description = gradleProps['mod_description']
 }
 
-def version_replaces = { [
-        'version'      : project.version,
-        'build_number' : version_buildnumber,
-        'version_mc'   : version_minecraft,
-        'version_forge': version_forge,
-		
-        'mod_license'  : mod_license,
-        'mod_name'     : mod_name,
-        'mod_authors'  : mod_authors,
+def version_replaces = {
+    [
+        'version'        : project.version,
+        'build_number'   : version_buildnumber,
+        'version_mc'     : version_minecraft,
+        'version_forge'  : version_forge,
+        'mod_license'    : mod_license,
+        'mod_name'       : mod_name,
+        'mod_authors'    : mod_authors,
         'mod_description': mod_description,
-		
-        'stage'        : stage,
-] as Map<String, Object> }
+        'stage'          : stage,
+    ] as Map<String, Object>
+}
 
 def jsonPatterns = ["**/*.json", "**/*.mcmeta"]
 
@@ -98,8 +72,8 @@ processResources {
     }
     exclude ".cache"
     doLast {
-        fileTree(dir: getOutputs().getFiles().getAsPath(), includes: jsonPatterns).each {
-            File file -> file.setText(JsonOutput.toJson(new JsonSlurper().parse(file, 'UTF-8')))
+        fileTree(dir: outputs.files.asPath, includes: jsonPatterns).each { File file ->
+            file.text = JsonOutput.toJson(new JsonSlurper().parse(file, 'UTF-8'))
         }
     }
 }
@@ -113,56 +87,30 @@ tasks.register('copyModsTomlForIntelliJ', Copy) {
 
 minecraft {
     mappings channel: 'parchment', version: version_parchment + '-' + version_minecraft
-	
+
     runs {
         client {
-            workingDirectory = project.file('run')
+            workingDirectory project.file('run')
             property 'forge.logging.markers', ''
             property 'forge.enabledGameTestNamespaces', mod_id
             ideaModule project.name + ".main"
             mods {
                 blastplaster {
-                    source(sourceSets.main as SourceSet)
+                    source sourceSets.main
                 }
             }
-			args '--username', 'tgstyle'
+            args '--username', 'tgstyle'
             args '--width', '1920'
             args '--height', '1080'
         }
         server {
-            workingDirectory = project.file('run')
+            workingDirectory project.file('run')
             property 'forge.logging.markers', ''
             property 'forge.enabledGameTestNamespaces', mod_id
             arg '-nogui'
             mods {
                 blastplaster {
-                    source(sourceSets.main as SourceSet)
-                }
-            }
-        }
-        data {
-            workingDirectory = project.file('run')
-            property 'forge.logging.markers', ''
-            property 'fml.earlyprogresswindow', 'false'
-            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--validate',
-                    '--existing', sourceSets.main.resources.srcDirs.first()
-            ideaModule project.name + ".datagen"
-            mods {
-                blastplaster {
-                    source(sourceSets.main as SourceSet)
-                    source(sourceSets.datagen as SourceSet)
-                }
-            }
-        }
-        gameTestServer {
-            workingDirectory = project.file('run')
-            property 'forge.logging.markers', ''
-            property 'forge.enabledGameTestNamespaces', mod_id
-            ideaModule project.name + ".gametest"
-            mods {
-                blastplaster {
-                    source(sourceSets.main as SourceSet)
-                    source(sourceSets.gametest as SourceSet)
+                    source sourceSets.main
                 }
             }
         }
@@ -185,7 +133,7 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${version_minecraft}-${version_forge}"
     implementation fg.deobf("curse.maven:flib-661261:6369719")
-    implementation fg.deobf("curse.maven:dynamictrees-252818:7340373")	
+    implementation fg.deobf("curse.maven:dynamictrees-252818:7340373")
 }
 
 def customGradle = rootProject.file('custom.gradle')
@@ -201,9 +149,12 @@ tasks.register('bumpVersion') {
         def nextBuild = currentBuild + 1
         props['build_number'] = nextBuild.toString()
         file('version.properties').withOutputStream { props.store(it, null) }
+
         ext.version_buildnumber = nextBuild
-        def stage = props['stage']
-        def newVersion = "${props['version']}-b${nextBuild}-${stage}"
+        def stage = props['stage'] ?: ''
+        def stagePart = stage ? "-${stage}" : ""
+        def newVersion = "${props['version']}-b${nextBuild}${stagePart}"
+
         project.version = newVersion
         tasks.withType(Jar).configureEach {
             it.archiveVersion.set(newVersion)
@@ -212,9 +163,7 @@ tasks.register('bumpVersion') {
 }
 
 tasks.register('signJar', SignJar) {
-    onlyIf {
-        project.hasProperty('keyStore')
-    }
+    onlyIf { project.hasProperty('keyStore') }
     if (project.hasProperty('keyStore')) {
         keyStore = project.keyStore
         alias = project.storeAlias
@@ -229,25 +178,14 @@ tasks.register('signJar', SignJar) {
 
 build.dependsOn bumpVersion, signJar
 
-tasks.register('datagenJar', Jar) {
-    dependsOn datagenClasses
-    archiveClassifier = 'datagen'
-    from sourceSets.datagen.output
-    manifest {
-        attributes "FMLModType": "GAMELIBRARY"
-    }
-}
-
 tasks.register('sourcesJar', Jar) {
     dependsOn classes
     archiveClassifier = 'sources'
     from sourceSets.main.allSource
-    from sourceSets.datagen.allSource
 }
 
 artifacts {
     archives sourcesJar
-    archives datagenJar
 }
 
 void minimizePNGFile(File file) {
@@ -267,31 +205,25 @@ void minimizePNGFile(File file) {
 tasks.register('optimizePng') {
     def pngPatterns = ["**/*.png"]
     doLast {
-        for (dir in sourceSets.main.resources.srcDirs) {
+        sourceSets.main.resources.srcDirs.each { dir ->
             fileTree(dir: dir, includes: pngPatterns).each { minimizePNGFile(it) }
         }
     }
 }
 
-tasks.register('genIntellijRunsDummy')
+tasks.register('genIntellijRunsDummy') {}
 
 tasks.register('speedUpPreRun') {
     doLast {
-        for (String s : new String[]{"Client", "Server", "Data"}) {
+        ["Client", "Server"].each { s ->
             def runConfigFile = file(".idea/runConfigurations/run${s}.xml")
             if (runConfigFile.exists()) {
-                ant.replace(
-                        file: runConfigFile,
-                        token: "prepareRun${s}",
-                        value: "prepareRuns"
-                )
+                ant.replace(file: runConfigFile, token: "prepareRun${s}", value: "prepareRuns")
                 def content = runConfigFile.text
                 if (!content.contains('-Dorg.gradle.logging.level=warn')) {
-                    ant.replace(
-                            file: runConfigFile,
+                    ant.replace(file: runConfigFile,
                             token: '<option name="VM_PARAMETERS" value="',
-                            value: '<option name="VM_PARAMETERS" value="-Dorg.gradle.logging.level=warn '
-                    )
+                            value: '<option name="VM_PARAMETERS" value="-Dorg.gradle.logging.level=warn ')
                 }
             }
         }
@@ -307,9 +239,18 @@ tasks.withType(Task).configureEach {
     }
 }
 
+idea {
+    project {
+        settings {
+            taskTriggers {
+                afterSync genIntellijRunsDummy
+            }
+        }
+    }
+}
+
 processResources.dependsOn bumpVersion
 jar.dependsOn bumpVersion
-datagenJar.dependsOn bumpVersion
 sourcesJar.dependsOn bumpVersion
 
 jar {
