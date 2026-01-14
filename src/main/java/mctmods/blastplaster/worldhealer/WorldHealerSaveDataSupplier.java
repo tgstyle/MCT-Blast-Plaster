@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
@@ -40,7 +41,6 @@ import net.minecraftforge.fml.ModList;
 import com.ferreusveritas.dynamictrees.api.TreeHelper;
 import com.ferreusveritas.dynamictrees.api.network.MapSignal;
 import com.ferreusveritas.dynamictrees.api.network.NodeInspector;
-import com.ferreusveritas.dynamictrees.systems.nodemapper.FindEndsNode;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -51,6 +51,8 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
   private boolean dirtyFlag = false;
   private int lastQueueSize = 0;
   static final String DATAKEY = BlastPlaster.MODID;
+
+  private static final int MAX_LEAF_DISTANCE = 10;
 
   public WorldHealerSaveDataSupplier() {}
 
@@ -85,54 +87,57 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
     boolean isDtLoaded = ModList.get().isLoaded("dynamictrees");
     if (Config.healFullTrees()) {
       if (isDtLoaded) {
-        Set<BlockPos> dtTreePos = new HashSet<>();
+        Set<BlockPos> uniqueRoots = new HashSet<>();
         for (BlockPos pos : affectedPos) {
           BlockState state = world.getBlockState(pos);
           if (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state)) {
-            BlockPos rootPos = TreeHelper.findRootNode(world, pos);
+            BlockPos rootPos = TreeHelper.isBranch(state) ? TreeHelper.findRootNode(world, pos) : findRootFromLeaf(world, pos);
             if (rootPos != BlockPos.ZERO) {
-              CollectorNode branchCollector = new CollectorNode(dtTreePos);
-              TreeHelper.startAnalysisFromRoot(world, rootPos, new MapSignal(branchCollector));
-              FindEndsNode endCollector = new FindEndsNode();
-              TreeHelper.startAnalysisFromRoot(world, rootPos, new MapSignal(endCollector));
-              Map<BlockPos, Integer> levels = new HashMap<>();
-              Queue<BlockPos> leafQueue = new LinkedList<>();
-              for (BlockPos branch : dtTreePos) {
-                levels.put(branch, 0);
-                leafQueue.add(branch);
-              }
-              Set<BlockPos> visited = new HashSet<>(dtTreePos);
-              while (!leafQueue.isEmpty()) {
-                BlockPos p = leafQueue.poll();
-                int level_p = levels.get(p);
-                for (Direction dir : Direction.values()) {
-                  BlockPos adj = p.relative(dir);
-                  if (!visited.contains(adj)) {
-                    BlockState adjState = world.getBlockState(adj);
-                    if (TreeHelper.isLeaves(adjState)) {
-                      int new_level = level_p + 1;
-                      if (new_level <= 7) {
-                        int old_level = levels.getOrDefault(adj, Integer.MAX_VALUE);
-                        if (new_level < old_level) {
-                          levels.put(adj, new_level);
-                          leafQueue.add(adj);
-                        }
-                        dtTreePos.add(adj);
-                        visited.add(adj);
-                      }
+              uniqueRoots.add(rootPos);
+            }
+          }
+        }
+        for (BlockPos rootPos : uniqueRoots) {
+          Set<BlockPos> dtTreePos = new HashSet<>();
+          CollectorNode branchCollector = new CollectorNode(dtTreePos);
+          TreeHelper.startAnalysisFromRoot(world, rootPos, new MapSignal(branchCollector));
+          Map<BlockPos, Integer> levels = new HashMap<>();
+          Queue<BlockPos> leafQueue = new LinkedList<>();
+          for (BlockPos branch : dtTreePos) {
+            levels.put(branch, 0);
+            leafQueue.add(branch);
+          }
+          Set<BlockPos> visited = new HashSet<>(dtTreePos);
+          while (!leafQueue.isEmpty()) {
+            BlockPos p = leafQueue.poll();
+            int level_p = levels.get(p);
+            for (Direction dir : Direction.values()) {
+              BlockPos adj = p.relative(dir);
+              if (!visited.contains(adj)) {
+                BlockState adjState = world.getBlockState(adj);
+                if (TreeHelper.isLeaves(adjState)) {
+                  int new_level = level_p + 1;
+                  if (new_level <= MAX_LEAF_DISTANCE) {
+                    int old_level = levels.getOrDefault(adj, Integer.MAX_VALUE);
+                    if (new_level < old_level) {
+                      levels.put(adj, new_level);
+                      leafQueue.add(adj);
                     }
+                    dtTreePos.add(adj);
+                    visited.add(adj);
                   }
                 }
               }
             }
           }
-        }
           for (BlockPos p : dtTreePos) {
-          if (!affectedPos.contains(p)) {
-            toHeal.add(new BlockStatePosWrapper(world, p, world.getBlockState(p)));
+            if (!affectedPos.contains(p)) {
+              toHeal.add(new BlockStatePosWrapper(world, p, world.getBlockState(p)));
+            }
           }
         }
       } else {
+        // vanilla tree handling unchanged
         Set<TagKey<Block>> logTagsFound = new HashSet<>();
         Set<Block> leafBlocksFound = new HashSet<>();
         for (BlockStatePosWrapper w : toHeal) {
@@ -160,7 +165,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
         if (logTag != null && leafBlock != null) {
           Queue<BlockPos> queue = new LinkedList<>();
           Set<BlockPos> logPos = new HashSet<>();
-            for (BlockStatePosWrapper w : toHeal) {
+          for (BlockStatePosWrapper w : toHeal) {
             BlockState s = w.getBlockState();
             if (s.is(logTag)) {
               queue.add(w.getBlockPos());
@@ -222,7 +227,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
               }
             }
           }
-            for (BlockPos pos : treePos) {
+          for (BlockPos pos : treePos) {
             if (!affectedPos.contains(pos)) {
               BlockState state = world.getBlockState(pos);
               toHeal.add(new BlockStatePosWrapper(world, pos, state));
@@ -276,6 +281,53 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
       }
     }
     dirtyFlag = true;
+  }
+
+  private int getLeafDistance(BlockState state) {
+    if (TreeHelper.isLeaves(state)) {
+      IntegerProperty hydroProp = (IntegerProperty) state.getBlock().getStateDefinition().getProperty("hydro");
+      if (hydroProp != null) {
+        int hydro = state.getValue(hydroProp);
+        return 5 - hydro;
+      } else {
+        return state.getValue(LeavesBlock.DISTANCE);
+      }
+    }
+    return 0;
+  }
+
+  private BlockPos findRootFromLeaf(Level world, BlockPos leafPos) {
+    BlockState state = world.getBlockState(leafPos);
+    if (!TreeHelper.isLeaves(state)) return BlockPos.ZERO;
+    int currentDist = getLeafDistance(state);
+    BlockPos pos = leafPos;
+    Set<BlockPos> visited = new HashSet<>();
+    while (currentDist > 1) {
+      visited.add(pos);
+      int minNeighDist = currentDist;
+      BlockPos nextPos = null;
+      for (Direction dir : Direction.values()) {
+        BlockPos adj = pos.relative(dir);
+        if (visited.contains(adj)) continue;
+        BlockState adjState = world.getBlockState(adj);
+        int neighDist = getLeafDistance(adjState);
+        if (neighDist > 0 && neighDist < minNeighDist) {
+          minNeighDist = neighDist;
+          nextPos = adj;
+        }
+      }
+      if (nextPos == null) return BlockPos.ZERO;
+      pos = nextPos;
+      currentDist = minNeighDist;
+    }
+    for (Direction dir : Direction.values()) {
+      BlockPos adj = pos.relative(dir);
+      BlockState adjState = world.getBlockState(adj);
+      if (TreeHelper.isBranch(adjState)) {
+        return TreeHelper.findRootNode(world, adj);
+      }
+    }
+    return BlockPos.ZERO;
   }
 
   private boolean isValid(BlockState state) {
@@ -366,16 +418,16 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
 
   public static WorldHealerSaveDataSupplier loadWorldHealer(ServerLevel serverLevelIn) {
     DimensionDataStorage storage = serverLevelIn.getDataStorage();
-      return storage.computeIfAbsent(tag -> {
-        WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
-        w.level = serverLevelIn;
-        w.deserializeNBT(tag);
-        return w;
-      }, () -> {
-        WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
-        w.level = serverLevelIn;
-        return w;
-      }, DATAKEY);
+    return storage.computeIfAbsent(tag -> {
+      WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
+      w.level = serverLevelIn;
+      w.deserializeNBT(tag);
+      return w;
+    }, () -> {
+      WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
+      w.level = serverLevelIn;
+      return w;
+    }, DATAKEY);
   }
 
   @Override
