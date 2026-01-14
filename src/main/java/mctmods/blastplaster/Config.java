@@ -36,32 +36,43 @@ public class Config extends ConfigTemplate {
   static {
     final ForgeConfigSpec.Builder BUILDER = builder();
     BUILDER.push(BlastPlaster.MODID);
-    MIN_TICKS_BEFORE_HEAL = BUILDER.defineInRange("TickStartDelay", 300, 1, 600000);
-    RANDOM_TICK_VAR = BUILDER.defineInRange("TickRandomInterval", 600, 1, 600000);
-    OVERRIDE_BLOCKS = BUILDER.define("OverrideBlocks", true);
-    DROP_IF_ALREADY_BLOCK = BUILDER.define("DropBlockConflict", true);
-    HEAL_CREEPERS = BUILDER.define("HealCreepers", true);
-    HEAL_NONPLAYER_TNT = BUILDER.define("HealNonPlayerTNT", true);
-    HEAL_WITHER = BUILDER.define("HealWither", true);
-    HEAL_ALL = BUILDER.define("HealAll", false);
-    HEAL_FULL_TREES = BUILDER.define("HealFullTrees", true);
-    TREE_LOG_LEAF_PAIRS = BUILDER.defineListAllowEmpty("TreeLogLeafPairs", Arrays.asList(
-            "minecraft:oak_logs=minecraft:oak_leaves",
-            "minecraft:spruce_logs=minecraft:spruce_leaves",
-            "minecraft:birch_logs=minecraft:birch_leaves",
-            "minecraft:jungle_logs=minecraft:jungle_leaves",
-            "minecraft:acacia_logs=minecraft:acacia_leaves",
-            "minecraft:dark_oak_logs=minecraft:dark_oak_leaves",
-            "minecraft:mangrove_logs=minecraft:mangrove_leaves",
-            "minecraft:cherry_logs=minecraft:cherry_leaves"
-    ), s -> s instanceof String);
-    MAX_TREE_SIZE = BUILDER.defineInRange("MaxTreeSize", 500, 0, 10000);
+    MIN_TICKS_BEFORE_HEAL = BUILDER.comment("Minimum ticks before healing starts after an explosion")
+            .defineInRange("TickStartDelay", 300, 1, 600000);
+    RANDOM_TICK_VAR = BUILDER.comment("Random tick variation added to the delay for each healing layer")
+            .defineInRange("TickRandomInterval", 600, 1, 600000);
+    OVERRIDE_BLOCKS = BUILDER.comment("If true, override non-air blocks during healing (e.g., replace fluids or other blocks)")
+            .define("OverrideBlocks", true);
+    DROP_IF_ALREADY_BLOCK = BUILDER.comment("If true and OverrideBlocks is false, drop the healed block as an item if the position is occupied")
+            .define("DropBlockConflict", true);
+    HEAL_CREEPERS = BUILDER.comment("If true, heal explosions caused by creepers")
+            .define("HealCreepers", true);
+    HEAL_NONPLAYER_TNT = BUILDER.comment("If true, heal TNT explosions not ignited by players (e.g., redstone or other entities)")
+            .define("HealNonPlayerTNT", true);
+    HEAL_WITHER = BUILDER.comment("If true, heal explosions caused by withers")
+            .define("HealWither", true);
+    HEAL_ALL = BUILDER.comment("If true, heal all explosions regardless of source (overrides other heal options)")
+            .define("HealAll", false);
+    HEAL_FULL_TREES = BUILDER.comment("If true, heal entire trees when part of a tree is damaged by an explosion")
+            .define("HealFullTrees", true);
+    TREE_LOG_LEAF_PAIRS = BUILDER.comment("List of tree log tag to leaf block pairs for vanilla tree healing (format: modid:log_tag=modid:leaf_block)")
+            .defineListAllowEmpty("TreeLogLeafPairs", Arrays.asList(
+                    "minecraft:oak_logs=minecraft:oak_leaves",
+                    "minecraft:spruce_logs=minecraft:spruce_leaves",
+                    "minecraft:birch_logs=minecraft:birch_leaves",
+                    "minecraft:jungle_logs=minecraft:jungle_leaves",
+                    "minecraft:acacia_logs=minecraft:acacia_leaves",
+                    "minecraft:dark_oak_logs=minecraft:dark_oak_leaves",
+                    "minecraft:mangrove_logs=minecraft:mangrove_leaves",
+                    "minecraft:cherry_logs=minecraft:cherry_leaves"
+            ), s -> s instanceof String);
+    MAX_TREE_SIZE = BUILDER.comment("Maximum number of blocks in a tree to allow full tree healing (prevents performance issues with very large trees)")
+            .defineInRange("MaxTreeSize", 500, 0, 10000);
     BUILDER.pop();
     CONFIG = BUILDER.build();
   }
 
   public Config() {
-    CONFIG.setConfig(setup(BlastPlaster.MODID));
+    CONFIG.setConfig(setup(BlastPlaster.MODID + "-common"));
   }
 
   public static int getMinimumTicksBeforeHeal() {
