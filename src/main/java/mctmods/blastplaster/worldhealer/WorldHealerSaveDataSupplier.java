@@ -5,11 +5,10 @@ import java.util.function.Supplier;
 
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.BlastPlaster;
-
-import com.lothrazar.library.data.BlockStatePosWrapper;
-import com.lothrazar.library.data.TickContainer;
-import com.lothrazar.library.data.TickingHealList;
-import com.lothrazar.library.util.LevelWorldUtil;
+import mctmods.blastplaster.helper.BlockStatePosWrapper;
+import mctmods.blastplaster.helper.TickContainer;
+import mctmods.blastplaster.helper.TickingHealList;
+import mctmods.blastplaster.util.BlastPlasterUtil;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -57,12 +56,12 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
   public WorldHealerSaveDataSupplier() {}
 
   public void onTick() {
-    if (healTask.getLinkedList().isEmpty()) return;
-    int currentSize = healTask.getLinkedList().size();
+    if (healTask.getQueue().isEmpty()) return;
+    int currentSize = healTask.getQueue().size();
     if (currentSize != lastQueueSize) {
       lastQueueSize = currentSize;
     }
-    Collection<BlockStatePosWrapper> blocksToHeal = healTask.tick();
+    Collection<BlockStatePosWrapper> blocksToHeal = healTask.processTick();
     if (blocksToHeal != null) {
       for (BlockStatePosWrapper blockData : blocksToHeal) {
         heal(blockData);
@@ -141,7 +140,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
         Set<TagKey<Block>> logTagsFound = new HashSet<>();
         Set<Block> leafBlocksFound = new HashSet<>();
         for (BlockStatePosWrapper w : toHeal) {
-          BlockState s = w.getBlockState();
+          BlockState s = w.getState();
           if (s.is(BlockTags.LOGS)) {
             for (TagKey<Block> tag : Config.getTreeMap().keySet()) {
               if (s.is(tag)) {
@@ -166,12 +165,12 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
           Queue<BlockPos> queue = new LinkedList<>();
           Set<BlockPos> logPos = new HashSet<>();
           for (BlockStatePosWrapper w : toHeal) {
-            BlockState s = w.getBlockState();
+            BlockState s = w.getState();
             if (s.is(logTag)) {
-              queue.add(w.getBlockPos());
-              logPos.add(w.getBlockPos());
+              queue.add(w.getPos());
+              logPos.add(w.getPos());
             } else if (s.getBlock() == leafBlock) {
-              queue.add(w.getBlockPos());
+              queue.add(w.getPos());
             }
           }
           Set<BlockPos> treePos = new HashSet<>();
@@ -239,7 +238,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
 
     List<BlockStatePosWrapper> plantExtras = new ArrayList<>();
     for (BlockStatePosWrapper w : toHeal) {
-      BlockPos pos = w.getBlockPos();
+      BlockPos pos = w.getPos();
       int height = 1;
       while (true) {
         BlockPos above = pos.above(height);
@@ -255,13 +254,13 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
     toHeal.addAll(plantExtras);
 
     for (BlockStatePosWrapper wrapper : toHeal) {
-      world.removeBlockEntity(wrapper.getBlockPos());
-      world.setBlock(wrapper.getBlockPos(), Blocks.AIR.defaultBlockState(), 3);
+      world.removeBlockEntity(wrapper.getPos());
+      world.setBlock(wrapper.getPos(), Blocks.AIR.defaultBlockState(), 3);
     }
 
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : toHeal) {
-      int y = wrapper.getBlockPos().getY();
+      int y = wrapper.getPos().getY();
       layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
     }
 
@@ -270,12 +269,12 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
-        healTask.add(layerDelay, layer.get(0));
+        healTask.enqueue(layerDelay, layer.get(0));
         currentDelay += 20;
       } else {
         for (BlockStatePosWrapper wrapper : layer) {
           int delay = layerDelay + world.random.nextInt(var);
-          healTask.add(delay, wrapper);
+          healTask.enqueue(delay, wrapper);
         }
         currentDelay += var;
       }
@@ -335,7 +334,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
   }
 
   private void heal(BlockStatePosWrapper blockData) {
-    BlockPos pos = blockData.getBlockPos();
+    BlockPos pos = blockData.getPos();
     BlockState currentState = level.getBlockState(pos);
     FluidState fluid = level.getFluidState(pos);
     boolean isEmpty = currentState.isAir();
@@ -344,11 +343,11 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
       if ((!isEmpty && !hasFluid) && Config.isDropIfAlreadyBlock()) {
         dropBlockData(blockData);
       }
-      level.setBlock(pos, blockData.getBlockState(), 3);
-      if (blockData.getTileEntityTag() != null) {
+      level.setBlock(pos, blockData.getState(), 3);
+      if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
         if (te != null) {
-          te.load(blockData.getTileEntityTag());
+          te.load(blockData.getEntityTag());
         }
       }
     } else if (Config.isDropIfAlreadyBlock()) {
@@ -357,14 +356,14 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
   }
 
   private void dropBlockData(BlockStatePosWrapper blockData) {
-    Block block = blockData.getBlockState().getBlock();
-    LevelWorldUtil.dropItemStackRandomMotion(level, blockData.getBlockPos(), new ItemStack(block), 0.05F);
-    CompoundTag tag = blockData.getTileEntityTag();
+    Block block = blockData.getState().getBlock();
+    BlastPlasterUtil.dropItemWithMotion(level, blockData.getPos(), new ItemStack(block), 0.05F);
+    CompoundTag tag = blockData.getEntityTag();
     if (tag != null && block instanceof EntityBlock) {
-      BlockEntity te = ((EntityBlock) block).newBlockEntity(blockData.getBlockPos(), blockData.getBlockState());
+      BlockEntity te = ((EntityBlock) block).newBlockEntity(blockData.getPos(), blockData.getState());
       if (te instanceof Container ct) {
         te.load(tag);
-        Containers.dropContents(level, blockData.getBlockPos(), ct);
+        Containers.dropContents(level, blockData.getPos(), ct);
       }
     }
   }
@@ -372,13 +371,13 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
   @Override
   public @NotNull CompoundTag save(@NotNull CompoundTag tag) {
     ListTag tagList = new ListTag();
-    for (TickContainer<Collection<BlockStatePosWrapper>> tc : healTask.getLinkedList()) {
+    for (TickContainer<Collection<BlockStatePosWrapper>> tc : healTask.getQueue()) {
       CompoundTag tcTag = new CompoundTag();
-      tcTag.putInt("ticks", tc.getTick());
+      tcTag.putInt("ticks", tc.getTicks());
       ListTag bdList = new ListTag();
-      for (BlockStatePosWrapper bd : tc.getData()) {
+      for (BlockStatePosWrapper bd : tc.getValue()) {
         CompoundTag bdTag = new CompoundTag();
-        bd.writeToNBT(bdTag);
+        bd.writeNBT(bdTag);
         bdList.add(bdTag);
       }
       tcTag.put("blockDataList", bdList);
@@ -397,14 +396,14 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
       for (Tag bt : bdListTag) {
         CompoundTag bdTag = (CompoundTag) bt;
         BlockStatePosWrapper bd = new BlockStatePosWrapper();
-        bd.readFromNBT(bdTag, level);
+        bd.readNBT(bdTag, level);
         allWrappers.add(bd);
       }
     }
     if (!allWrappers.isEmpty()) {
       TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
       for (BlockStatePosWrapper wrapper : allWrappers) {
-        int y = wrapper.getBlockPos().getY();
+        int y = wrapper.getPos().getY();
         layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
       }
       for (List<BlockStatePosWrapper> layer : layers.values()) {
@@ -434,7 +433,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
   public boolean isDirty() {
     boolean d = dirtyFlag;
     dirtyFlag = false;
-    return d || !healTask.getLinkedList().isEmpty();
+    return d || !healTask.getQueue().isEmpty();
   }
 
   @Override

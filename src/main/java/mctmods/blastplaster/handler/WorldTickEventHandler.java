@@ -2,13 +2,17 @@ package mctmods.blastplaster.handler;
 
 import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
-import com.lothrazar.library.events.EventFlib;
 
 import net.minecraft.server.level.ServerLevel;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-public class WorldTickEventHandler extends EventFlib {
+public class WorldTickEventHandler {
+
+  public WorldTickEventHandler() {
+    MinecraftForge.EVENT_BUS.register(this);
+  }
 
   @SubscribeEvent
   public void onWorldTick(TickEvent.LevelTickEvent event) {

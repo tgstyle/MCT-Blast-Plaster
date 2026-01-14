@@ -1,6 +1,7 @@
 package mctmods.blastplaster;
 
-import com.lothrazar.library.config.ConfigTemplate;
+import com.electronwill.nightconfig.core.file.CommentedFileConfig;
+import com.electronwill.nightconfig.core.io.WritingMode;
 
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
@@ -10,13 +11,14 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
+import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Arrays;
 
-public class Config extends ConfigTemplate {
+public class Config {
 
   private static final ForgeConfigSpec SPEC;
   private static final IntValue MIN_TICKS_BEFORE_HEAL;
@@ -34,7 +36,7 @@ public class Config extends ConfigTemplate {
   private static final Map<Block, TagKey<Block>> LEAF_TO_LOG_MAP = new HashMap<>();
 
   static {
-    final ForgeConfigSpec.Builder builder = builder();
+    final ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
     builder.push(BlastPlaster.MODID);
     MIN_TICKS_BEFORE_HEAL = builder.comment("Minimum ticks before healing starts after an explosion.")
             .defineInRange("TickStartDelay", 300, 1, 600000);
@@ -72,7 +74,10 @@ public class Config extends ConfigTemplate {
   }
 
   public Config() {
-    SPEC.setConfig(setup(BlastPlaster.MODID + "-common"));
+    CommentedFileConfig configData = CommentedFileConfig.builder(FMLPaths.CONFIGDIR.get().resolve(BlastPlaster.MODID + "-common.toml"))
+            .sync().autosave().writingMode(WritingMode.REPLACE).build();
+    configData.load();
+    SPEC.setConfig(configData);
   }
 
   public static int getMinimumTicksBeforeHeal() {

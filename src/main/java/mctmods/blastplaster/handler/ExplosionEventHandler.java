@@ -3,7 +3,6 @@ package mctmods.blastplaster.handler;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
-import com.lothrazar.library.events.EventFlib;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
@@ -12,10 +11,15 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.projectile.WitherSkull;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-public class ExplosionEventHandler extends EventFlib {
+public class ExplosionEventHandler {
+
+  public ExplosionEventHandler() {
+    MinecraftForge.EVENT_BUS.register(this);
+  }
 
   @SubscribeEvent
   public void onDetonate(ExplosionEvent.Detonate event) {

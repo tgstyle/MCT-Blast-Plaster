@@ -4,15 +4,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
-import com.lothrazar.library.events.EventFlib;
 
 import net.minecraft.server.level.ServerLevel;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-public class WorldEventHandler extends EventFlib {
+public class WorldEventHandler {
 
   private final Map<ServerLevel, WorldHealerSaveDataSupplier> worldHealers = new HashMap<>();
+
+  public WorldEventHandler() {
+    MinecraftForge.EVENT_BUS.register(this);
+  }
 
   public Map<ServerLevel, WorldHealerSaveDataSupplier> getWorldHealers() {
     return worldHealers;
