@@ -1,0 +1,34 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="LGPL-3.0"
+
+[[mods]]
+modId="blastplaster"
+version="${version}"
+displayName="Blast Plaster"
+displayURL="https://??"
+logoFile="MCTlogo.png"
+authors="tgstyle"
+description="Got a Blast? Heal it Fast!"
+credits="Thanks to EyZox, Lothrazar for inspiration from CreeperHeal"
+
+[[dependencies.blastplaster]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.blastplaster]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.blastplaster]]
+modId="flib"
+mandatory=true
+versionRange="[0.0.5,)"
+ordering="NONE"
+side="BOTH"
