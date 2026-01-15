@@ -12,11 +12,14 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import net.minecraft.core.HolderSet;
 
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.Arrays;
+import java.util.Objects;
 
 public class Config {
 
@@ -32,6 +35,7 @@ public class Config {
   private static final BooleanValue HEAL_FULL_TREES;
   private static final ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
   private static final IntValue MAX_TREE_SIZE;
+  private static final ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
   private static final Map<TagKey<Block>, Block> TREE_MAP = new HashMap<>();
   private static final Map<Block, TagKey<Block>> LEAF_TO_LOG_MAP = new HashMap<>();
 
@@ -56,26 +60,20 @@ public class Config {
             .define("HealAll", false);
     HEAL_FULL_TREES = builder.comment("If true, heal entire trees when part of a tree is damaged by an explosion.")
             .define("HealFullTrees", true);
-    TREE_LOG_LEAF_PAIRS = builder.comment("List of tree log tag to leaf block pairs for vanilla tree healing (format: modid:log_tag=modid:leaf_block).")
-            .defineListAllowEmpty("TreeLogLeafPairs", Arrays.asList(
-                    "minecraft:oak_logs=minecraft:oak_leaves",
-                    "minecraft:spruce_logs=minecraft:spruce_leaves",
-                    "minecraft:birch_logs=minecraft:birch_leaves",
-                    "minecraft:jungle_logs=minecraft:jungle_leaves",
-                    "minecraft:acacia_logs=minecraft:acacia_leaves",
-                    "minecraft:dark_oak_logs=minecraft:dark_oak_leaves",
-                    "minecraft:mangrove_logs=minecraft:mangrove_leaves",
-                    "minecraft:cherry_logs=minecraft:cherry_leaves"
-            ), s -> s instanceof String);
+    TREE_LOG_LEAF_PAIRS = builder.comment(
+                    "Automatic detection handles trees that follow the standard naming convention ",
+                    "(_logs tag and _leaves block in the same namespace).",
+                    "Use this list only for custom pairings that do not follow the convention or to override auto-detected ones.",
+                    "Format: modid:log_tag=modid:leaf_block")
+            .defineListAllowEmpty("TreeLogLeafPairs", List.of(), s -> s instanceof String);
     MAX_TREE_SIZE = builder.comment("Maximum number of blocks in a tree to allow full tree healing (prevents performance issues with very large trees).")
             .defineInRange("MaxTreeSize", 500, 0, 10000);
-    builder.pop();
+    CUSTOM_ENTITIES_TO_HEAL = builder.comment("List of entity registry names (modid:entity_id) whose explosions should be healed under the healNonPlayerTNT category.")
+            .defineListAllowEmpty("CustomEntitiesToHeal", List.of("undeadnights:demolition_zombie"), s -> s instanceof String);
     SPEC = builder.build();
   }
 
-  private Config() {
-    // Private constructor to prevent instantiation
-  }
+  private Config() {}
 
   public static void load() {
     CommentedFileConfig configData = CommentedFileConfig.builder(FMLPaths.CONFIGDIR.get().resolve(BlastPlaster.MODID + "-common.toml"))
@@ -138,16 +136,40 @@ public class Config {
     return LEAF_TO_LOG_MAP;
   }
 
+  @SuppressWarnings("unchecked")
+  public static List<String> getCustomEntitiesToHeal() {
+    return (List<String>) CUSTOM_ENTITIES_TO_HEAL.get();
+  }
+
   private static void buildMaps() {
+    TREE_MAP.clear();
+    LEAF_TO_LOG_MAP.clear();
+
+    for (Block leafBlock : ForgeRegistries.BLOCKS.getValues()) {
+      ResourceLocation loc = ForgeRegistries.BLOCKS.getKey(leafBlock);
+      if (loc != null && loc.getPath().endsWith("_leaves")) {
+        String path = loc.getPath();
+        String prefix = path.substring(0, path.length() - "_leaves".length());
+        String logPath = prefix + "_logs";
+        ResourceLocation logLoc = ResourceLocation.fromNamespaceAndPath(loc.getNamespace(), logPath);
+        TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
+
+        if (!Objects.requireNonNull(ForgeRegistries.BLOCKS.tags()).getTag(logTag).isEmpty()) {
+          TREE_MAP.put(logTag, leafBlock);
+          LEAF_TO_LOG_MAP.put(leafBlock, logTag);
+        }
+      }
+    }
+
     for (String pair : TREE_LOG_LEAF_PAIRS.get()) {
       String[] parts = pair.split("=");
       if (parts.length == 2) {
-        ResourceLocation logLoc = ResourceLocation.tryParse(parts[0]);
-        ResourceLocation leafLoc = ResourceLocation.tryParse(parts[1]);
+        ResourceLocation logLoc = ResourceLocation.tryParse(parts[0].trim());
+        ResourceLocation leafLoc = ResourceLocation.tryParse(parts[1].trim());
         if (logLoc != null && leafLoc != null) {
           TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
-          Block leafBlock = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(leafLoc);
-          if (leafBlock != null) {
+          Block leafBlock = ForgeRegistries.BLOCKS.getValue(leafLoc);
+          if (leafBlock != null && !Objects.requireNonNull(ForgeRegistries.BLOCKS.tags()).getTag(logTag).isEmpty()) {
             TREE_MAP.put(logTag, leafBlock);
             LEAF_TO_LOG_MAP.put(leafBlock, logTag);
           }

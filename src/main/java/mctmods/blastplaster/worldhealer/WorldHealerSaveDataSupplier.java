@@ -136,7 +136,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
           }
         }
       } else {
-        // vanilla tree handling unchanged
         Set<TagKey<Block>> logTagsFound = new HashSet<>();
         Set<Block> leafBlocksFound = new HashSet<>();
         for (BlockStatePosWrapper w : toHeal) {
@@ -257,6 +256,12 @@ public class WorldHealerSaveDataSupplier extends SavedData implements Supplier<O
       world.removeBlockEntity(wrapper.getPos());
       world.setBlock(wrapper.getPos(), Blocks.AIR.defaultBlockState(), 3);
     }
+
+    Set<BlockPos> healedPositions = new HashSet<>();
+    for (BlockStatePosWrapper wrapper : toHeal) {
+      healedPositions.add(wrapper.getPos());
+    }
+    event.getExplosion().getToBlow().removeAll(healedPositions);
 
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : toHeal) {

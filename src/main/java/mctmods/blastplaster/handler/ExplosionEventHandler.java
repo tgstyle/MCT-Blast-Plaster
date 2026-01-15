@@ -4,16 +4,21 @@ import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.WitherSkull;
+import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.level.Explosion;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.registries.ForgeRegistries;
 
 public class ExplosionEventHandler {
 
@@ -26,7 +31,8 @@ public class ExplosionEventHandler {
     if (event.getLevel().isClientSide) return;
 
     Explosion explosion = event.getExplosion();
-    var exploder = explosion.getDirectSourceEntity();
+    Entity exploder = explosion.getDirectSourceEntity();
+    LivingEntity indirect = explosion.getIndirectSourceEntity();
 
     boolean healThis = Config.healAll();
 
@@ -38,10 +44,26 @@ public class ExplosionEventHandler {
         healThis = true;
       }
       if (!healThis && Config.healNonPlayerTNT()) {
-        LivingEntity indirect = explosion.getIndirectSourceEntity();
         boolean nonPlayerCaused = !(indirect instanceof Player);
-        boolean tntInteraction = explosion.blockInteraction == Explosion.BlockInteraction.DESTROY_WITH_DECAY;
-        if (nonPlayerCaused && tntInteraction) {
+
+        boolean isPrimedTnt = exploder instanceof PrimedTnt;
+
+        boolean isCustomEntity = false;
+        for (String idStr : Config.getCustomEntitiesToHeal()) {
+          ResourceLocation id = ResourceLocation.tryParse(idStr);
+          if (id != null) {
+            EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(id);
+            if (type != null) {
+              if ((exploder != null && exploder.getType() == type) ||
+                      (indirect != null && indirect.getType() == type)) {
+                isCustomEntity = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (nonPlayerCaused && (isPrimedTnt || isCustomEntity)) {
           healThis = true;
         }
       }
