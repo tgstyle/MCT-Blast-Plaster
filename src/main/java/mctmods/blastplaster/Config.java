@@ -14,8 +14,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.registries.ForgeRegistries;
 
-import net.minecraft.core.HolderSet;
-
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
