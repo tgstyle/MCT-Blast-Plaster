@@ -43,9 +43,9 @@ public class Config {
     final ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
     builder.push(BlastPlaster.MODID);
     MIN_TICKS_BEFORE_HEAL = builder.comment("Minimum ticks before healing starts after an explosion.")
-            .defineInRange("TickStartDelay", 300, 1, 600000);
+            .defineInRange("TickStartDelay", 600, 1, 600000);
     RANDOM_TICK_VAR = builder.comment("Random tick variation added to the delay for each healing layer.")
-            .defineInRange("TickRandomInterval", 60, 1, 600000);
+            .defineInRange("TickRandomInterval", 100, 1, 600000);
     OVERRIDE_BLOCKS = builder.comment("If true, override non-air blocks during healing (e.g., replace fluids or other blocks).")
             .define("OverrideBlocks", true);
     DROP_IF_ALREADY_BLOCK = builder.comment("If true and OverrideBlocks is false, drop the healed block as an item if the position is occupied.")
