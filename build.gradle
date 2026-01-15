@@ -133,8 +133,6 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${version_minecraft}-${version_forge}"
 
-	runtimeOnly fg.deobf("curse.maven:undead-nights-1166914:7452062")
-
     implementation fg.deobf("curse.maven:dynamictrees-252818:7340373")
 }
 
