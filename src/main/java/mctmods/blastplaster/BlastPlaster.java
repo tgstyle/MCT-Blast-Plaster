@@ -22,7 +22,7 @@ public class BlastPlaster {
   private static WorldEventHandler WEV;
 
   public BlastPlaster(FMLJavaModLoadingContext context) {
-    new Config();
+    Config.load();
     context.getModEventBus().addListener(this::setup);
     BlastPlaster.WEV = new WorldEventHandler();
   }

@@ -73,7 +73,11 @@ public class Config {
     SPEC = builder.build();
   }
 
-  public Config() {
+  private Config() {
+    // Private constructor to prevent instantiation
+  }
+
+  public static void load() {
     CommentedFileConfig configData = CommentedFileConfig.builder(FMLPaths.CONFIGDIR.get().resolve(BlastPlaster.MODID + "-common.toml"))
             .sync().autosave().writingMode(WritingMode.REPLACE).build();
     configData.load();
