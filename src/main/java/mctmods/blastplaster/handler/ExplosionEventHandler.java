@@ -6,6 +6,7 @@ import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -19,6 +20,9 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.registries.ForgeRegistries;
+
+import java.util.ArrayList;
+import java.util.HashSet;
 
 public class ExplosionEventHandler {
 
@@ -70,8 +74,31 @@ public class ExplosionEventHandler {
     }
 
     if (healThis) {
-      WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer((ServerLevel) event.getLevel());
-      if (worldHealer != null) worldHealer.onDetonate(event);
+      ServerLevel serverLevel = (ServerLevel) event.getLevel();
+      WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer(serverLevel);
+      if (worldHealer != null) {
+        var toHeal = new ArrayList<mctmods.blastplaster.helper.BlockStatePosWrapper>();
+        var affectedPos = new HashSet<net.minecraft.core.BlockPos>();
+        for (net.minecraft.core.BlockPos pos : event.getAffectedBlocks()) {
+          net.minecraft.world.level.block.state.BlockState state = serverLevel.getBlockState(pos);
+          if (state.isAir() ||
+                  state.is(BlockTags.DOORS) ||
+                  state.is(BlockTags.BEDS) ||
+                  state.is(BlockTags.TALL_FLOWERS)) {
+            continue;
+          }
+          toHeal.add(new mctmods.blastplaster.helper.BlockStatePosWrapper(serverLevel, pos, state));
+          affectedPos.add(pos);
+        }
+        if (!toHeal.isEmpty()) {
+          for (mctmods.blastplaster.helper.BlockStatePosWrapper wrapper : toHeal) {
+            serverLevel.removeBlockEntity(wrapper.getPos());
+            serverLevel.setBlock(wrapper.getPos(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+          }
+          event.getExplosion().getToBlow().removeAll(affectedPos);
+          worldHealer.prepareAndScheduleHealing(toHeal, affectedPos, serverLevel);
+        }
+      }
     }
   }
 }

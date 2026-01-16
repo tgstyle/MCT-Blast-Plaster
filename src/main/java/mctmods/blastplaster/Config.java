@@ -6,12 +6,14 @@ import com.electronwill.nightconfig.core.io.WritingMode;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
 import net.minecraftforge.common.ForgeConfigSpec.IntValue;
+import net.minecraftforge.common.ForgeConfigSpec.DoubleValue;
 import net.minecraftforge.common.ForgeConfigSpec.ConfigValue;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.List;
@@ -34,6 +36,8 @@ public class Config {
   private static final ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
   private static final IntValue MAX_TREE_SIZE;
   private static final ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
+  private static final BooleanValue HEAL_ALEXSCAVES_NUKES;
+  private static final DoubleValue NUKE_MAX_RESISTANCE;
   private static final Map<TagKey<Block>, Block> TREE_MAP = new HashMap<>();
   private static final Map<Block, TagKey<Block>> LEAF_TO_LOG_MAP = new HashMap<>();
 
@@ -43,7 +47,7 @@ public class Config {
     MIN_TICKS_BEFORE_HEAL = builder.comment("Minimum ticks before healing starts after an explosion.")
             .defineInRange("TickStartDelay", 600, 1, 600000);
     RANDOM_TICK_VAR = builder.comment("Random tick variation added to the delay for each healing layer.")
-            .defineInRange("TickRandomInterval", 100, 1, 600000);
+            .defineInRange("TickRandomInterval", 200, 1, 600000);
     OVERRIDE_BLOCKS = builder.comment("If true, override non-air blocks during healing (e.g., replace fluids or other blocks).")
             .define("OverrideBlocks", true);
     DROP_IF_ALREADY_BLOCK = builder.comment("If true and OverrideBlocks is false, drop the healed block as an item if the position is occupied.")
@@ -68,6 +72,10 @@ public class Config {
             .defineInRange("MaxTreeSize", 500, 0, 10000);
     CUSTOM_ENTITIES_TO_HEAL = builder.comment("List of entity registry names (modid:entity_id) whose explosions should be healed under the healNonPlayerTNT category.")
             .defineListAllowEmpty("CustomEntitiesToHeal", List.of("undeadnights:demolition_zombie"), s -> s instanceof String);
+    HEAL_ALEXSCAVES_NUKES = builder.comment("If true and Alex's Caves is loaded, heal nuclear explosions caused by Nucleepers (prevents block drops and restores terrain).")
+            .define("HealAlexsCavesNukes", true);
+    NUKE_MAX_RESISTANCE = builder.comment("Maximum explosion resistance for blocks to be destroyed and healed by Alex's Caves nuclear explosions (if compat enabled). Higher values mean fewer blocks are affected. Default matches bedrock resistance.")
+            .defineInRange("NukeMaxBlockResistance", 3600000.0, 0.0, Double.MAX_VALUE);
     SPEC = builder.build();
   }
 
@@ -118,6 +126,14 @@ public class Config {
 
   public static int getMaxTreeSize() {
     return MAX_TREE_SIZE.get();
+  }
+
+  public static boolean healAlexsCavesNukes() {
+    return HEAL_ALEXSCAVES_NUKES.get() && ModList.get().isLoaded("alexscaves");
+  }
+
+  public static double getNukeMaxResistance() {
+    return NUKE_MAX_RESISTANCE.get();
   }
 
   public static Map<TagKey<Block>, Block> getTreeMap() {
