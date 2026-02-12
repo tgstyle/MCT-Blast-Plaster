@@ -74,7 +74,7 @@ public class AlexsCavesCompat {
             Set<BlockPos> affectedPos = new HashSet<>();
 
             BlockPos.MutableBlockPos carve = new BlockPos.MutableBlockPos();
-            final float fixedWidth = 0.55F;
+            final float fixedWidth = 0.85F;
 
             Explosion dummyExplosion = new Explosion(world, null, center.getX(), center.getY(), center.getZ(), 10.0F, List.of());
 
@@ -89,17 +89,14 @@ public class AlexsCavesCompat {
                                     carve.set(chunkCorner.getX() + x, worldY, chunkCorner.getZ() + z);
 
                                     double absDy = Math.abs(center.getY() - carve.getY());
-                                    double yDist = Math.max(0.0, 0.6 - absDy / radius);
+                                    double yDist = Math.max(0.0, 0.65 - absDy / radius);
                                     double distToCenterSqr = carve.distToLowCornerSqr(center.getX(), carve.getY() - 1.0, center.getZ());
                                     double targetRadiusSqr = yDist * (radius + fixedWidth * radius) * radius;
 
                                     if (distToCenterSqr <= targetRadiusSqr) {
                                         BlockState state = world.getBlockState(carve);
                                         boolean destroyable = !state.is(NUKE_PROOF) && (state.getBlock().getExplosionResistance(state, world, carve, dummyExplosion) < Config.getNukeMaxResistance()) || state.getBlock() == TREMORZILLA_EGG;
-                                        if (destroyable && (!state.isAir() || !state.getFluidState().isEmpty()) &&
-                                                !state.is(net.minecraft.tags.BlockTags.DOORS) &&
-                                                !state.is(net.minecraft.tags.BlockTags.BEDS) &&
-                                                !state.is(net.minecraft.tags.BlockTags.TALL_FLOWERS)) {
+                                        if (destroyable && (!state.isAir() || !state.getFluidState().isEmpty())) {
                                             toHeal.add(new BlockStatePosWrapper(world, carve.immutable(), state));
                                             affectedPos.add(carve.immutable());
 
