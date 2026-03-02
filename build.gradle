@@ -180,7 +180,7 @@ build.dependsOn bumpVersion, signJar
 
 tasks.register('sourcesJar', Jar) {
     dependsOn classes
-    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
+    archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
     archiveClassifier = 'sources'
     from sourceSets.main.allSource
 }
@@ -255,6 +255,6 @@ jar.dependsOn bumpVersion
 sourcesJar.dependsOn bumpVersion
 
 jar {
-    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
+    archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
     archiveClassifier.set('')
 }
