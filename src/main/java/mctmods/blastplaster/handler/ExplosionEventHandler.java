@@ -34,6 +34,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
 
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -118,8 +119,6 @@ public class ExplosionEventHandler {
       }
 
       if (!toProcess.isEmpty()) {
-        if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.enableDropScavenger()) { BlastPlasterUtil.scheduleItemScavenger(serverLevel, affectedPos); }
-
         if (Config.healFullTrees()) {
           WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(serverLevel);
           if (expansionHealer != null) { expansionHealer.addExtraTreeBlocks(toProcess, affectedPos, serverLevel); }
@@ -127,6 +126,8 @@ public class ExplosionEventHandler {
 
         if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, serverLevel); }
         if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, serverLevel); }
+
+        if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.enableDropScavenger()) { BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos); }
 
         explosion.getToBlow().removeAll(affectedPos);
 
@@ -218,6 +219,15 @@ public class ExplosionEventHandler {
 
         if (Config.enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
       }
+    }
+  }
+
+  @SubscribeEvent public void onItemEntityJoin(EntityJoinLevelEvent event) {
+    if (event.getLevel().isClientSide) { return; }
+    if (!(event.getEntity() instanceof ItemEntity item)) { return; }
+    if (BlastPlasterUtil.shouldSuppressItemDrop(item)) {
+      event.setCanceled(true);
+      BlastPlaster.LOGGER.info("Pre-spawn cancelled stray item drop of {} at {}", item.getItem(), item.position());
     }
   }
 

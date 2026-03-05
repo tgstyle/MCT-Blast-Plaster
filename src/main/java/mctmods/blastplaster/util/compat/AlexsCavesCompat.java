@@ -135,13 +135,14 @@ public class AlexsCavesCompat {
         }
 
         if (mode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, world); }
+        if (mode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, world); }
 
         if (mode == ExplosionMode.HEAL) {
             WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer(world);
             if (worldHealer != null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, world); }
         }
 
-        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropScavenger()) { BlastPlasterUtil.scheduleItemScavenger(world, affectedPos); }
+        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropScavenger()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos); }
 
         for (BlockStatePosWrapper wrapper : toProcess) {
             BlockPos pos = wrapper.getPos();

@@ -6,7 +6,6 @@ import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -37,6 +36,10 @@ public class BlastPlasterUtil {
 
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
 
+    private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
+
+    private record ExplosionArea(AABB box, long expireTick) {}
+
     static {
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
@@ -51,6 +54,49 @@ public class BlastPlasterUtil {
         if (isAlexsCavesNuke) { return ALEXSCAVES_NUKE_VISUAL_CHANCE; }
         if (isCreeper) { return CREEPER_VISUAL_CHANCE; }
         return DEFAULT_VISUAL_CHANCE;
+    }
+
+    public static void recordExplosionArea(ServerLevel level, Set<BlockPos> positions) {
+        if (positions.isEmpty()) { return; }
+
+        double minX = Double.MAX_VALUE;
+        double minY = Double.MAX_VALUE;
+        double minZ = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double maxY = -Double.MAX_VALUE;
+        double maxZ = -Double.MAX_VALUE;
+
+        for (BlockPos pos : positions) {
+            minX = Math.min(minX, pos.getX());
+            minY = Math.min(minY, pos.getY());
+            minZ = Math.min(minZ, pos.getZ());
+            maxX = Math.max(maxX, pos.getX());
+            maxY = Math.max(maxY, pos.getY());
+            maxZ = Math.max(maxZ, pos.getZ());
+        }
+
+        AABB box = new AABB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
+        long expire = level.getGameTime() + 200L;
+
+        recentExplosions.add(new ExplosionArea(box, expire));
+        recentExplosions.removeIf(area -> area.expireTick < level.getGameTime());
+    }
+
+    @SuppressWarnings("resource")
+    public static boolean shouldSuppressItemDrop(ItemEntity item) {
+        Level rawLevel = item.level();
+        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+
+        long now = serverLevel.getGameTime();
+        recentExplosions.removeIf(area -> area.expireTick < now);
+
+        Vec3 pos = item.position();
+        for (ExplosionArea area : recentExplosions) {
+            if (area.box.contains(pos)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType) {
@@ -190,32 +236,6 @@ public class BlastPlasterUtil {
 
     public static boolean calculateRealDrop(ServerLevel level) { return level.random.nextFloat() < (Config.enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
 
-    public static AABB createScavengerBox(Set<BlockPos> positions) {
-        if (positions.isEmpty()) { return new AABB(0, 0, 0, 0, 0, 0); }
-
-        double minX = Double.MAX_VALUE;
-        double minY = Double.MAX_VALUE;
-        double minZ = Double.MIN_VALUE;
-        double maxX = Double.MIN_VALUE;
-        double maxY = Double.MIN_VALUE;
-        double maxZ = Double.MIN_VALUE;
-
-        for (BlockPos pos : positions) {
-            minX = Math.min(minX, pos.getX());
-            minY = Math.min(minY, pos.getY());
-            minZ = Math.min(minZ, pos.getZ());
-            maxX = Math.max(maxX, pos.getX());
-            maxY = Math.max(maxY, pos.getY());
-            maxZ = Math.max(maxZ, pos.getZ());
-        }
-
-        return new AABB(minX - 6.0, minY - 6.0, minZ - 6.0, maxX + 7.0, maxY + 7.0, maxZ + 7.0);
-    }
-
-    public static boolean shouldScavenge(ItemEntity item) {
-        return !item.getPersistentData().getBoolean("BlastPlasterMobDrop");
-    }
-
     public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();
         for (BlockStatePosWrapper w : new ArrayList<>(toProcess)) {
@@ -236,17 +256,5 @@ public class BlastPlasterUtil {
             }
         }
         toProcess.addAll(extras);
-    }
-
-    public static void scheduleItemScavenger(ServerLevel level, Set<BlockPos> affectedPositions) {
-        if (affectedPositions.isEmpty()) { return; }
-
-        AABB box = createScavengerBox(affectedPositions);
-
-        int scavengerTick = level.getServer().getTickCount() + 2;
-        level.getServer().tell(new TickTask(scavengerTick, () -> level.getEntitiesOfClass(ItemEntity.class, box, item -> item.getAge() < 10 && shouldScavenge(item)).forEach(ItemEntity::discard)));
-
-        int insuranceTick = level.getServer().getTickCount() + 60;
-        level.getServer().tell(new TickTask(insuranceTick, () -> level.getEntitiesOfClass(ItemEntity.class, box, item -> item.getAge() < 70 && shouldScavenge(item)).forEach(ItemEntity::discard)));
     }
 }
