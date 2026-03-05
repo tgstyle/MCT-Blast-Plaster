@@ -212,6 +212,10 @@ public class BlastPlasterUtil {
         return new AABB(minX - 6.0, minY - 6.0, minZ - 6.0, maxX + 7.0, maxY + 7.0, maxZ + 7.0);
     }
 
+    public static boolean shouldScavenge(ItemEntity item) {
+        return !item.getPersistentData().getBoolean("BlastPlasterMobDrop");
+    }
+
     public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();
         for (BlockStatePosWrapper w : new ArrayList<>(toProcess)) {
@@ -240,9 +244,9 @@ public class BlastPlasterUtil {
         AABB box = createScavengerBox(affectedPositions);
 
         int scavengerTick = level.getServer().getTickCount() + 2;
-        level.getServer().tell(new TickTask(scavengerTick, () -> level.getEntitiesOfClass(ItemEntity.class, box, item -> item.getAge() < 10).forEach(ItemEntity::discard)));
+        level.getServer().tell(new TickTask(scavengerTick, () -> level.getEntitiesOfClass(ItemEntity.class, box, item -> item.getAge() < 10 && shouldScavenge(item)).forEach(ItemEntity::discard)));
 
         int insuranceTick = level.getServer().getTickCount() + 60;
-        level.getServer().tell(new TickTask(insuranceTick, () -> level.getEntitiesOfClass(ItemEntity.class, box, item -> item.getAge() < 70).forEach(ItemEntity::discard)));
+        level.getServer().tell(new TickTask(insuranceTick, () -> level.getEntitiesOfClass(ItemEntity.class, box, item -> item.getAge() < 70 && shouldScavenge(item)).forEach(ItemEntity::discard)));
     }
 }

@@ -66,6 +66,7 @@ public class Config {
   private static final IntValue MAX_TREE_SIZE;
 
   private static final BooleanValue ENABLE_DROP_SCAVENGER;
+  private static final BooleanValue PREVENT_MOB_DROPS;
 
   private static final Map<TagKey<Block>, Block> TREE_MAP = new HashMap<>();
   private static final Map<String, Block> DT_LOG_MAP = new HashMap<>();
@@ -192,6 +193,16 @@ public class Config {
     builder.comment(
             "",
             "================================================================",
+            "  MOB DROPS",
+            "================================================================");
+    builder.push("mob_drops");
+    PREVENT_MOB_DROPS = builder.comment("If true, prevent ALL drops from mobs/entities killed by ANY explosion (in every mode). Vanilla drops are cancelled. Default false (allow drops - they are automatically protected from the scavenger so they survive cleanup in HEAL/VISUAL_TOSS modes).")
+            .define("PreventMobDrops", false);
+    builder.pop();
+
+    builder.comment(
+            "",
+            "================================================================",
             "  TREE & MISC HELPERS",
             "================================================================");
     builder.push("trees");
@@ -249,6 +260,7 @@ public class Config {
   public static boolean dtSpecialDrops() { return DT_SPECIAL_DROPS.get(); }
   public static int getMaxTreeSize() { return MAX_TREE_SIZE.get(); }
   public static boolean enableDropScavenger() { return ENABLE_DROP_SCAVENGER.get(); }
+  public static boolean preventMobDrops() { return PREVENT_MOB_DROPS.get(); }
 
   public static Map<TagKey<Block>, Block> getTreeMap() {
     if (TREE_MAP.isEmpty()) { buildMaps(); }
