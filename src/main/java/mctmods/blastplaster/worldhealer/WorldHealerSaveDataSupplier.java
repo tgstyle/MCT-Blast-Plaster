@@ -96,8 +96,16 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
 
+    List<BlockStatePosWrapper> dtBranches = new ArrayList<>();
     List<BlockStatePosWrapper> dtLeaves = new ArrayList<>();
     if (ModList.get().isLoaded("dynamictrees")) {
+      for (int i = toHeal.size() - 1; i >= 0; i--) {
+        BlockStatePosWrapper w = toHeal.get(i);
+        if (TreeHelper.isBranch(w.getState())) {
+          dtBranches.add(w);
+          toHeal.remove(i);
+        }
+      }
       for (int i = toHeal.size() - 1; i >= 0; i--) {
         BlockStatePosWrapper w = toHeal.get(i);
         if (TreeHelper.isLeaves(w.getState())) {
@@ -109,8 +117,17 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
     List<BlockStatePosWrapper> nonVines = new ArrayList<>();
     List<BlockStatePosWrapper> vines = new ArrayList<>();
+    List<BlockStatePosWrapper> bambooCane = new ArrayList<>();
     for (BlockStatePosWrapper w : toHeal) {
-      if (w.getState().getBlock() instanceof VineBlock) { vines.add(w); } else { nonVines.add(w); }
+      if (w.getState().getBlock() instanceof VineBlock) { vines.add(w); }
+      else {
+        Block block = w.getState().getBlock();
+        if (ModList.get().isLoaded("dynamictrees") && (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE)) {
+          bambooCane.add(w);
+        } else {
+          nonVines.add(w);
+        }
+      }
     }
 
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
@@ -135,10 +152,17 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
 
-    if (!dtLeaves.isEmpty()) {
-      int leafTick = currentDelay + 10;
-      for (BlockStatePosWrapper leaf : dtLeaves) { healTask.enqueue(leafTick, leaf); }
-      currentDelay = leafTick + 5;
+    if (ModList.get().isLoaded("dynamictrees")) {
+      List<BlockStatePosWrapper> dtBatch = new ArrayList<>();
+      dtBatch.addAll(dtBranches);
+      dtBatch.addAll(dtLeaves);
+      dtBatch.addAll(bambooCane);
+      if (!dtBatch.isEmpty()) {
+        int batchTick = currentDelay + 10;
+        for (BlockStatePosWrapper item : dtBatch) { healTask.enqueue(batchTick, item); }
+        BlastPlaster.LOGGER.debug("DT batch heal scheduled: {} branches + {} leaves + {} bamboo/cane at tick {}", dtBranches.size(), dtLeaves.size(), bambooCane.size(), batchTick);
+        currentDelay = batchTick + 5;
+      }
     }
 
     if (!vines.isEmpty()) {
@@ -275,9 +299,9 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
       if (uniqueRoots.isEmpty()) {
         for (BlockPos p : affectedPos) {
-          for (int dx = -5; dx <= 5; dx++) {
-            for (int dy = -5; dy <= 5; dy++) {
-              for (int dz = -5; dz <= 5; dz++) {
+          for (int dx = -LEAF_BRUTE_RADIUS; dx <= LEAF_BRUTE_RADIUS; dx++) {
+            for (int dy = -LEAF_BRUTE_RADIUS; dy <= LEAF_BRUTE_RADIUS; dy++) {
+              for (int dz = -LEAF_BRUTE_RADIUS; dz <= LEAF_BRUTE_RADIUS; dz++) {
                 BlockPos adj = p.offset(dx, dy, dz);
                 BlockState s = level.getBlockState(adj);
                 if (TreeHelper.isBranch(s) || TreeHelper.isLeaves(s) || s.getBlock() instanceof BasicRootsBlock || s.getBlock() instanceof RootyBlock) {
@@ -862,7 +886,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
   private record CollectorNode(Set<BlockPos> nodeSet) implements com.ferreusveritas.dynamictrees.api.network.NodeInspector {
     @Override public boolean run(BlockState state, LevelAccessor level, BlockPos pos, Direction fromDir) {
       nodeSet.add(pos.immutable());
-      return false;
+      return true;
     }
 
     @Override public boolean returnRun(BlockState state, LevelAccessor level, BlockPos pos, Direction fromDir) { return false; }
