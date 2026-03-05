@@ -8,14 +8,10 @@ public abstract class TickingLinkedList<T> {
     protected LinkedList<TickContainer<T>> queue = new LinkedList<>();
 
     public T processTick() {
-        if (this.queue.isEmpty()) {
-            return null;
-        }
+        if (this.queue.isEmpty()) { return null; }
         TickContainer<T> current = this.queue.getFirst();
         current.decrement();
-        if (current.isDone()) {
-            return Objects.requireNonNull(this.queue.poll()).getValue();
-        }
+        if (current.isDone()) { return Objects.requireNonNull(this.queue.poll()).getValue(); }
         return null;
     }
 

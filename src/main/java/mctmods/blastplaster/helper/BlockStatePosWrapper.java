@@ -17,13 +17,10 @@ public class BlockStatePosWrapper {
         this.state = state;
         this.pos = pos;
         BlockEntity entity = level.getBlockEntity(pos);
-        if (entity != null) {
-            this.entityTag = entity.saveWithoutMetadata();
-        }
+        if (entity != null) { this.entityTag = entity.saveWithoutMetadata(); }
     }
 
-    public BlockStatePosWrapper() {
-    }
+    public BlockStatePosWrapper() {}
 
     public BlockState getState() {
         return this.state;
@@ -40,16 +37,12 @@ public class BlockStatePosWrapper {
     public void readNBT(CompoundTag tag, Level level) {
         this.state = NbtUtils.readBlockState(level.holderLookup(Registries.BLOCK), tag.getCompound("block"));
         this.pos = NbtUtils.readBlockPos(tag.getCompound("pos"));
-        if (tag.contains("entity")) {
-            this.entityTag = tag.getCompound("entity");
-        }
+        if (tag.contains("entity")) { this.entityTag = tag.getCompound("entity"); }
     }
 
     public void writeNBT(CompoundTag tag) {
         tag.put("block", NbtUtils.writeBlockState(this.state));
         tag.put("pos", NbtUtils.writeBlockPos(this.pos));
-        if (this.entityTag != null) {
-            tag.put("entity", this.entityTag);
-        }
+        if (this.entityTag != null) { tag.put("entity", this.entityTag); }
     }
 }

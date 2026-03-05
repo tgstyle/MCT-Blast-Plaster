@@ -3,6 +3,7 @@ package mctmods.blastplaster;
 import mctmods.blastplaster.handler.ExplosionEventHandler;
 import mctmods.blastplaster.handler.WorldEventHandler;
 import mctmods.blastplaster.handler.WorldTickEventHandler;
+import mctmods.blastplaster.util.compat.AlexsCavesCompat;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.server.level.ServerLevel;
@@ -31,9 +32,7 @@ public class BlastPlaster {
   private void setup(final FMLCommonSetupEvent event) {
     new WorldTickEventHandler();
     new ExplosionEventHandler();
-    if (ModList.get().isLoaded("dynamictrees") && Config.healFullTrees()) {
-      LOGGER.info("Dynamic Trees detected and full tree healing enabled. Using DT integration.");
-    }
+    if (ModList.get().isLoaded("dynamictrees") && Config.healFullTrees()) { LOGGER.info("Dynamic Trees detected and full tree healing enabled. Using DT integration."); }
     if (ModList.get().isLoaded("alexscaves")) {
       LOGGER.info("Alex's Caves detected. Registering nuclear explosion compatibility.");
       MinecraftForge.EVENT_BUS.register(new AlexsCavesCompat());
