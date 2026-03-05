@@ -127,7 +127,7 @@ public class ExplosionEventHandler {
         if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, serverLevel); }
         if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, serverLevel); }
 
-        if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.enableDropScavenger()) { BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos); }
+        if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos); }
 
         explosion.getToBlow().removeAll(affectedPos);
 
@@ -227,7 +227,6 @@ public class ExplosionEventHandler {
     if (!(event.getEntity() instanceof ItemEntity item)) { return; }
     if (BlastPlasterUtil.shouldSuppressItemDrop(item)) {
       event.setCanceled(true);
-      BlastPlaster.LOGGER.info("Pre-spawn cancelled stray item drop of {} at {}", item.getItem(), item.position());
     }
   }
 

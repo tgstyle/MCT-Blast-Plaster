@@ -65,7 +65,7 @@ public class Config {
   private static final ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
   private static final IntValue MAX_TREE_SIZE;
 
-  private static final BooleanValue ENABLE_DROP_SCAVENGER;
+  private static final BooleanValue ENABLE_DROP_SUPPRESSION;
   private static final BooleanValue PREVENT_MOB_DROPS;
 
   private static final Map<TagKey<Block>, Block> TREE_MAP = new HashMap<>();
@@ -157,7 +157,7 @@ public class Config {
             "  ALEX'S CAVES COMPAT",
             "================================================================");
     builder.push("compatibility");
-    ENABLE_ALEXSCAVES_NUKES = builder.comment("If true and Alex's Caves is loaded, nucleeper explosions are processed according to selected mode (treated as non-player TNT).")
+    ENABLE_ALEXSCAVES_NUKES = builder.comment("If true and Alex's Caves is loaded, nucleeeper explosions are processed according to selected mode (treated as non-player TNT).")
             .define("EnableAlexsCavesNukes", true);
     builder.pop();
 
@@ -186,8 +186,8 @@ public class Config {
                             "dynamictrees:azalea=oak_log"
                     ),
                     s -> s instanceof String);
-    ENABLE_DROP_SCAVENGER = builder.comment("FINAL SAFETY NET: Delete any stray ItemEntities spawned by vanilla/modded drop logic in non-EJECT modes (covers seeds, vines, etc. that slip through). Default true. Set false only if you have performance concerns with many explosions.")
-            .define("EnableDropScavenger", true);
+    ENABLE_DROP_SUPPRESSION = builder.comment("Prevents ANY stray ItemEntities (seeds, sticks, bamboo, vines, etc.) from ever spawning in HEAL or VISUAL_TOSS modes by cancelling them the instant they try to join the world. This is the core safety system for non-EJECT modes (no late scavenging anymore). Default true.")
+            .define("EnableDropSuppression", true);
     builder.pop();
 
     builder.comment(
@@ -196,7 +196,7 @@ public class Config {
             "  MOB DROPS",
             "================================================================");
     builder.push("mob_drops");
-    PREVENT_MOB_DROPS = builder.comment("If true, prevent ALL drops from mobs/entities killed by ANY explosion (in every mode). Vanilla drops are cancelled. Default false (allow drops - they are automatically protected from the scavenger so they survive cleanup in HEAL/VISUAL_TOSS modes).")
+    PREVENT_MOB_DROPS = builder.comment("If true, prevent ALL drops from mobs/entities killed by ANY explosion (in every mode). Vanilla drops are cancelled. Default false (allow drops - they are automatically protected from suppression so they survive in HEAL/VISUAL_TOSS modes).")
             .define("PreventMobDrops", false);
     builder.pop();
 
@@ -259,7 +259,7 @@ public class Config {
   public static boolean healFullTrees() { return HEAL_FULL_TREES.get(); }
   public static boolean dtSpecialDrops() { return DT_SPECIAL_DROPS.get(); }
   public static int getMaxTreeSize() { return MAX_TREE_SIZE.get(); }
-  public static boolean enableDropScavenger() { return ENABLE_DROP_SCAVENGER.get(); }
+  public static boolean enableDropSuppression() { return ENABLE_DROP_SUPPRESSION.get(); }
   public static boolean preventMobDrops() { return PREVENT_MOB_DROPS.get(); }
 
   public static Map<TagKey<Block>, Block> getTreeMap() {

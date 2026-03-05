@@ -142,7 +142,7 @@ public class AlexsCavesCompat {
             if (worldHealer != null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, world); }
         }
 
-        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropScavenger()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos); }
+        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos); }
 
         for (BlockStatePosWrapper wrapper : toProcess) {
             BlockPos pos = wrapper.getPos();
