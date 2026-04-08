@@ -58,6 +58,7 @@ public class Config {
   private static final ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
 
   private static final BooleanValue ENABLE_ALEXSCAVES_NUKES;
+  private static final BooleanValue ENABLE_EXPLOSION_OVERHAUL;
 
   private static final BooleanValue DT_SPECIAL_DROPS;
   private static final ConfigValue<List<? extends String>> DT_LOG_MAPPINGS;
@@ -154,11 +155,13 @@ public class Config {
     builder.comment(
             "",
             "================================================================",
-            "  ALEX'S CAVES COMPAT",
+            "  COMPATIBILITY",
             "================================================================");
     builder.push("compatibility");
     ENABLE_ALEXSCAVES_NUKES = builder.comment("If true and Alex's Caves is loaded, nucleeeper explosions are processed according to selected mode (treated as non-player TNT).")
             .define("EnableAlexsCavesNukes", true);
+    ENABLE_EXPLOSION_OVERHAUL = builder.comment("If true and Explosion Overhaul is loaded, all EO explosions (including clustered 4+ TNT and custom crater generation) are processed according to selected mode (treated as non-player TNT).")
+            .define("EnableExplosionOverhaul", true);
     builder.pop();
 
     builder.comment(
@@ -229,6 +232,7 @@ public class Config {
   private static void validateConfig() {
     if (playerTNTAlwaysDrops() && !processPlayerIgnitedTNT()) { BlastPlaster.LOGGER.warn("[BlastPlaster] Config: PlayerTNTAlwaysDrops=true but ProcessPlayerIgnitedTNT=false - player TNT explosions will be ignored."); }
     if (!isAlexsCavesNukesEnabled() && ModList.get().isLoaded("alexscaves")) { BlastPlaster.LOGGER.info("[BlastPlaster] Alex's Caves loaded but EnableAlexsCavesNukes=false (nukes will be ignored)."); }
+    if (!isExplosionOverhaulEnabled() && ModList.get().isLoaded("explosionoverhaul")) { BlastPlaster.LOGGER.info("[BlastPlaster] Explosion Overhaul loaded but EnableExplosionOverhaul=false (clustered TNT / custom craters will be ignored)."); }
   }
 
   public static ExplosionMode getExplosionMode() { return EXPLOSION_MODE.get(); }
@@ -253,6 +257,7 @@ public class Config {
   public static List<String> getCustomEntitiesToHeal() { return (List<String>) CUSTOM_ENTITIES_TO_HEAL.get(); }
 
   public static boolean isAlexsCavesNukesEnabled() { return ENABLE_ALEXSCAVES_NUKES.get() && ModList.get().isLoaded("alexscaves"); }
+  public static boolean isExplosionOverhaulEnabled() { return ENABLE_EXPLOSION_OVERHAUL.get() && ModList.get().isLoaded("explosionoverhaul"); }
   public static int getMinimumTicksBeforeHeal() { return MIN_TICKS_BEFORE_HEAL.get(); }
   public static int getRandomTickVar() { return RANDOM_TICK_VAR.get(); }
   public static boolean isOverride() { return OVERRIDE_BLOCKS.get(); }
