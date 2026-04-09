@@ -28,6 +28,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.lang.reflect.Field;
@@ -129,7 +130,7 @@ public class AlexsCavesCompat {
 
         if (toProcess.isEmpty()) { return; }
 
-        if (Config.healFullTrees()) {
+        if (Config.healFullTrees() && ModList.get().isLoaded("dynamictrees")) {
             WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(world);
             if (expansionHealer != null) { expansionHealer.addExtraTreeBlocks(toProcess, affectedPos, world); }
         }

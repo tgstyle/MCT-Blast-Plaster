@@ -99,26 +99,21 @@ public class BlastPlasterUtil {
         return false;
     }
 
-    public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType) {
+    private static void addVerticalInDirection(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType, boolean upward) {
         int h = 1;
         while (true) {
-            BlockPos up = pos.above(h);
-            BlockState upState = level.getBlockState(up);
-            if (upState.getBlock() != blockType) { break; }
-            if (!affectedPos.contains(up)) { extras.add(new BlockStatePosWrapper(level, up, upState)); }
+            BlockPos offset = upward ? pos.above(h) : pos.below(h);
+            BlockState state = level.getBlockState(offset);
+            if (state.getBlock() != blockType) { break; }
+            if (!affectedPos.contains(offset)) { extras.add(new BlockStatePosWrapper(level, offset, state)); }
             h++;
             if (h > 20) { break; }
         }
+    }
 
-        h = 1;
-        while (true) {
-            BlockPos down = pos.below(h);
-            BlockState downState = level.getBlockState(down);
-            if (downState.getBlock() != blockType) { break; }
-            if (!affectedPos.contains(down)) { extras.add(new BlockStatePosWrapper(level, down, downState)); }
-            h++;
-            if (h > 20) { break; }
-        }
+    public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType) {
+        addVerticalInDirection(extras, affectedPos, level, pos, blockType, true);
+        addVerticalInDirection(extras, affectedPos, level, pos, blockType, false);
     }
 
     public static void addBambooVerticals(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, Level level) {

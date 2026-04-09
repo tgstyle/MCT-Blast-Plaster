@@ -85,13 +85,13 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
     addMultiBlockStructures(toHeal, affectedPos, level);
 
+    int currentDelay = Config.getMinimumTicksBeforeHeal();
     if (ModList.get().isLoaded("dynamictrees")) {
       List<BlockStatePosWrapper> dtPriority = extractDtPriorityBlocks(toHeal, level);
       if (!dtPriority.isEmpty()) {
-        int delay = Config.getMinimumTicksBeforeHeal();
         for (BlockStatePosWrapper w : dtPriority) {
-          healTask.enqueue(delay, w);
-          delay += 6;
+          healTask.enqueue(currentDelay, w);
+          currentDelay += 6;
         }
       }
     }
@@ -130,27 +130,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
 
-    TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
-    for (BlockStatePosWrapper wrapper : nonVines) {
-      int y = wrapper.getPos().getY();
-      layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
-    }
-
-    int currentDelay = Config.getMinimumTicksBeforeHeal();
-    int var = Config.getRandomTickVar();
-    for (List<BlockStatePosWrapper> layer : layers.values()) {
-      int layerDelay = currentDelay;
-      if (layer.size() == 1) {
-        healTask.enqueue(layerDelay, layer.get(0));
-        currentDelay += 20;
-      } else {
-        for (BlockStatePosWrapper wrapper : layer) {
-          int delay = layerDelay + level.random.nextInt(var);
-          healTask.enqueue(delay, wrapper);
-        }
-        currentDelay += var;
-      }
-    }
+    scheduleLayeredHealing(nonVines, currentDelay);
 
     if (ModList.get().isLoaded("dynamictrees")) {
       List<BlockStatePosWrapper> dtBatch = new ArrayList<>();
@@ -161,7 +141,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
         int batchTick = currentDelay + 10;
         for (BlockStatePosWrapper item : dtBatch) { healTask.enqueue(batchTick, item); }
         BlastPlaster.LOGGER.debug("DT batch heal scheduled: {} branches + {} leaves + {} bamboo/cane at tick {}", dtBranches.size(), dtLeaves.size(), bambooCane.size(), batchTick);
-        currentDelay = batchTick + 5;
       }
     }
 
@@ -177,13 +156,37 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     dirtyFlag = true;
   }
 
+  private void scheduleLayeredHealing(List<BlockStatePosWrapper> blocks, int baseDelay) {
+    if (blocks.isEmpty()) { return; }
+    TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
+    for (BlockStatePosWrapper wrapper : blocks) {
+      int y = wrapper.getPos().getY();
+      layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
+    }
+    int currentDelay = baseDelay;
+    int var = Config.getRandomTickVar();
+    for (List<BlockStatePosWrapper> layer : layers.values()) {
+      int layerDelay = currentDelay;
+      if (layer.size() == 1) {
+        healTask.enqueue(layerDelay, layer.get(0));
+        currentDelay += 20;
+      } else {
+        for (BlockStatePosWrapper wrapper : layer) {
+          int delay = layerDelay + level.random.nextInt(var);
+          healTask.enqueue(delay, wrapper);
+        }
+        currentDelay += var;
+      }
+    }
+  }
+
   private List<BlockStatePosWrapper> extractDtPriorityBlocks(List<BlockStatePosWrapper> toHeal, Level level) {
     List<BlockStatePosWrapper> priority = new ArrayList<>();
     Set<BlockPos> toRemove = new HashSet<>();
     Set<BlockPos> seenRoots = new HashSet<>();
 
     for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
-      BlockState state = w.getState();
+      BlockState state = level.getBlockState(w.getPos());
       if (state.getBlock() instanceof RootyBlock) {
         BlockPos rootPos = w.getPos();
         if (seenRoots.add(rootPos)) {
@@ -220,7 +223,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     List<BlockStatePosWrapper> extras = new ArrayList<>();
     for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
       BlockPos pos = w.getPos();
-      BlockState state = w.getState();
+      BlockState state = level.getBlockState(pos);
       Block block = state.getBlock();
 
       if (state.is(BlockTags.DOORS) && state.hasProperty(DoorBlock.HALF)) {
@@ -288,32 +291,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     boolean didDtExpansion = false;
 
     if (isDtLoaded) {
-      Set<BlockPos> uniqueRoots = new HashSet<>();
-      for (BlockPos pos : affectedPos) {
-        BlockState state = level.getBlockState(pos);
-        if (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || state.getBlock() instanceof BasicRootsBlock || state.getBlock() instanceof RootyBlock) {
-          BlockPos rootPos = (TreeHelper.isBranch(state) || state.getBlock() instanceof BasicRootsBlock || state.getBlock() instanceof RootyBlock) ? TreeHelper.findRootNode(level, pos) : findRootFromLeaf(level, pos);
-          if (rootPos != BlockPos.ZERO) { uniqueRoots.add(rootPos.immutable()); }
-        }
-      }
-
-      if (uniqueRoots.isEmpty()) {
-        for (BlockPos p : affectedPos) {
-          for (int dx = -LEAF_BRUTE_RADIUS; dx <= LEAF_BRUTE_RADIUS; dx++) {
-            for (int dy = -LEAF_BRUTE_RADIUS; dy <= LEAF_BRUTE_RADIUS; dy++) {
-              for (int dz = -LEAF_BRUTE_RADIUS; dz <= LEAF_BRUTE_RADIUS; dz++) {
-                BlockPos adj = p.offset(dx, dy, dz);
-                BlockState s = level.getBlockState(adj);
-                if (TreeHelper.isBranch(s) || TreeHelper.isLeaves(s) || s.getBlock() instanceof BasicRootsBlock || s.getBlock() instanceof RootyBlock) {
-                  BlockPos rootPos = (TreeHelper.isBranch(s) || s.getBlock() instanceof BasicRootsBlock || s.getBlock() instanceof RootyBlock) ? TreeHelper.findRootNode(level, adj) : findRootFromLeaf(level, adj);
-                  if (rootPos != BlockPos.ZERO) { uniqueRoots.add(rootPos.immutable()); }
-                }
-              }
-            }
-          }
-        }
-      }
-
+      Set<BlockPos> uniqueRoots = collectUniqueDynamicRoots(affectedPos, level);
       if (!uniqueRoots.isEmpty()) {
         didDtExpansion = true;
         for (BlockPos rootPos : uniqueRoots) {
@@ -372,7 +350,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (!isDtLoaded || !didDtExpansion) {
       Set<TagKey<Block>> logTagsFound = new HashSet<>();
       for (BlockStatePosWrapper w : toHeal) {
-        BlockState s = w.getState();
+        BlockState s = level.getBlockState(w.getPos());
         if (s.is(BlockTags.LOGS)) {
           for (TagKey<Block> tag : Config.getTreeMap().keySet()) {
             if (s.is(tag)) {
@@ -500,6 +478,40 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
 
     if (Config.healFullTrees()) { addConnectedVines(toHeal, affectedPos, level); }
+  }
+
+  private Set<BlockPos> collectUniqueDynamicRoots(Set<BlockPos> affectedPos, Level level) {
+    Set<BlockPos> uniqueRoots = new HashSet<>();
+    for (BlockPos pos : affectedPos) {
+      tryAddDynamicRoot(pos, level, uniqueRoots);
+    }
+
+    if (uniqueRoots.isEmpty()) {
+      for (BlockPos p : affectedPos) {
+        for (int dx = -LEAF_BRUTE_RADIUS; dx <= LEAF_BRUTE_RADIUS; dx++) {
+          for (int dy = -LEAF_BRUTE_RADIUS; dy <= LEAF_BRUTE_RADIUS; dy++) {
+            for (int dz = -LEAF_BRUTE_RADIUS; dz <= LEAF_BRUTE_RADIUS; dz++) {
+              BlockPos adj = p.offset(dx, dy, dz);
+              tryAddDynamicRoot(adj, level, uniqueRoots);
+            }
+          }
+        }
+      }
+    }
+    return uniqueRoots;
+  }
+
+  private void tryAddDynamicRoot(BlockPos pos, Level level, Set<BlockPos> uniqueRoots) {
+    BlockState s = level.getBlockState(pos);
+    if (isDynamicTreePart(s)) {
+      BlockPos rootPos = (TreeHelper.isBranch(s) || s.getBlock() instanceof BasicRootsBlock || s.getBlock() instanceof RootyBlock)
+              ? TreeHelper.findRootNode(level, pos) : findRootFromLeaf(level, pos);
+      if (rootPos != BlockPos.ZERO) { uniqueRoots.add(rootPos.immutable()); }
+    }
+  }
+
+  private boolean isDynamicTreePart(BlockState state) {
+    return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || state.getBlock() instanceof BasicRootsBlock || state.getBlock() instanceof RootyBlock;
   }
 
   private List<Set<BlockPos>> findConnectedLogClusters(Set<BlockPos> seeds) {
@@ -695,7 +707,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     Set<BlockPos> vineSeeds = new HashSet<>();
     for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
       BlockPos p = w.getPos();
-      BlockState s = w.getState();
+      BlockState s = level.getBlockState(p);
       if (s.is(BlockTags.LOGS) || s.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock || (ModList.get().isLoaded("dynamictrees") && TreeHelper.isLeaves(s))) {
         for (BlockPos offset : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
           BlockPos adj = p.offset(offset);
@@ -792,7 +804,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       return;
     }
 
-    if (ModList.get().isLoaded("dynamictrees") && (TreeHelper.isBranch(restoreState) || TreeHelper.isLeaves(restoreState) || restoreState.getBlock() instanceof BasicRootsBlock || restoreState.getBlock() instanceof RootyBlock)) {
+    if (ModList.get().isLoaded("dynamictrees") && isDynamicTreePart(restoreState)) {
       level.setBlock(pos, restoreState, 3);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
@@ -849,13 +861,8 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
     if (!allWrappers.isEmpty()) {
-      TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
-      for (BlockStatePosWrapper wrapper : allWrappers) {
-        int y = wrapper.getPos().getY();
-        layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
-      }
-      for (List<BlockStatePosWrapper> layer : layers.values()) {
-        for (BlockStatePosWrapper blockData : layer) { heal(blockData); }
+      for (BlockStatePosWrapper blockData : allWrappers) {
+        heal(blockData);
       }
       dirtyFlag = true;
     }
