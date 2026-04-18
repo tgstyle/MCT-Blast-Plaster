@@ -18,7 +18,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
-import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.monster.Creeper;
@@ -305,8 +304,6 @@ public class ExplosionEventHandler {
       if (BlastPlasterUtil.shouldSuppressItemDrop(item)) {
         event.setCanceled(true);
       }
-    } else if (event.getEntity() instanceof FallingBlockEntity && Config.isExplosionOverhaulEnabled() && Config.healAll()) {
-      event.setCanceled(true);
     }
   }
 
