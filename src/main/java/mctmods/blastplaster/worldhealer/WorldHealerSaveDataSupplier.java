@@ -81,23 +81,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     BlastPlaster.LOGGER.info("[BlastPlaster] DT PARTS collected: {}", dtParts.size());
 
     if (!dtParts.isEmpty() && ModList.get().isLoaded("dynamictrees")) {
-      int rootCount = 0;
-      int branchCount = 0;
-      int rootyCount = 0;
-      for (BlockStatePosWrapper w : dtParts) {
-        BlockState s = w.getState();
-        String blockKey = BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString().toLowerCase();
-        String descId = s.getBlock().getDescriptionId().toLowerCase();
-        if (s.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || descId.contains("root")) {
-          rootCount++;
-        } else if (TreeHelper.isBranch(s)) {
-          branchCount++;
-        } else if (TreeHelper.isRooty(s)) {
-          rootyCount++;
-        }
-      }
-      BlastPlaster.LOGGER.info("[BlastPlaster] DT breakdown before sort: {} roots (jungle_root/BasicRoots), {} branches, {} rooty", rootCount, branchCount, rootyCount);
-      logDTBlockMap(dtParts);
       dtParts.sort(Comparator.comparingInt((BlockStatePosWrapper w) -> w.getPos().getY()).reversed());
     }
 
@@ -131,24 +114,20 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
     }
 
-    int groundEnqueued = 0;
     int var = Config.getRandomTickVar();
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
         healTask.enqueue(HealPhase.GROUND, layerDelay, layer.getFirst());
-        groundEnqueued++;
         currentDelay += 20;
       } else {
         for (BlockStatePosWrapper wrapper : layer) {
           int delay = layerDelay + level.random.nextInt(var);
           healTask.enqueue(HealPhase.GROUND, delay, wrapper);
-          groundEnqueued++;
         }
         currentDelay += var;
       }
     }
-    BlastPlaster.LOGGER.info("[BlastPlaster] GROUND enqueued {} total, currentDelay={}", groundEnqueued, currentDelay);
 
     if (!bambooCane.isEmpty()) {
       int batchTick = currentDelay + 10;
@@ -157,22 +136,10 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
 
     if (ModList.get().isLoaded("dynamictrees") && !dtParts.isEmpty()) {
-      // DEBUG: strip roots/rooty from DT heal queue (collected for full tree expansion ID but root restoration stripped per user request - now enforced with filter + skip in heal)
-      int preStrip = dtParts.size();
-      dtParts.removeIf(w -> {
-        BlockState s = w.getState();
-        String blockKey = BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString().toLowerCase();
-        String descId = s.getBlock().getDescriptionId().toLowerCase();
-        return s.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || descId.contains("root") || TreeHelper.isRooty(s);
-      });
-      if (preStrip != dtParts.size()) {
-        BlastPlaster.LOGGER.info("[BlastPlaster] DEBUG stripped {} DT root/rooty blocks from heal queue (roots not restored)", preStrip - dtParts.size());
-      }
       int dtBatchTick = currentDelay + 10;
       for (BlockStatePosWrapper w : dtParts) {
         healTask.enqueue(HealPhase.TREE, dtBatchTick, w);
       }
-      BlastPlaster.LOGGER.info("[BlastPlaster] DT batch enqueued {} to TREE at {}", dtParts.size(), dtBatchTick);
       currentDelay = dtBatchTick + 10;
     }
 
@@ -195,45 +162,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
 
     dirtyFlag = true;
-  }
-
-  private void logDTBlockMap(List<BlockStatePosWrapper> dtParts) {
-    if (dtParts.isEmpty()) { return; }
-    Map<Integer, List<BlockStatePosWrapper>> byY = new TreeMap<>();
-    for (BlockStatePosWrapper w : dtParts) {
-      byY.computeIfAbsent(w.getPos().getY(), k -> new ArrayList<>()).add(w);
-    }
-    for (Map.Entry<Integer, List<BlockStatePosWrapper>> entry : byY.entrySet()) {
-      int y = entry.getKey();
-      if (y < 60 || y > 75) { continue; }
-      List<BlockStatePosWrapper> layer = entry.getValue();
-      layer.sort(Comparator.comparingInt((BlockStatePosWrapper w) -> w.getPos().getX()).thenComparingInt(w -> w.getPos().getZ()));
-      BlastPlaster.LOGGER.info("[BlastPlaster] === DT BLOCK MAP AT Y={} ({} blocks) ===", y, layer.size());
-      int trunkCount = 0;
-      int rootCount = 0;
-      for (BlockStatePosWrapper w : layer) {
-        BlockPos p = w.getPos();
-        BlockState s = w.getState();
-        String blockKey = BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString().toLowerCase();
-        String desc = s.getBlock().getDescriptionId();
-        String type;
-        if (s.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || desc.toLowerCase().contains("root")) {
-          type = "ROOT";
-          rootCount++;
-        } else if (TreeHelper.isRooty(s)) {
-          type = "ROOTY";
-          rootCount++;
-        } else if (TreeHelper.isBranch(s)) {
-          type = "BRANCH";
-          trunkCount++;
-        } else {
-          type = "OTHER_DT";
-        }
-        int radius = BlastPlasterUtil.getDTRadius(s);
-        BlastPlaster.LOGGER.info("  {} type={} radius={} desc={}", p, type, radius, desc);
-      }
-      BlastPlaster.LOGGER.info("[BlastPlaster] Y={} SUMMARY: {} trunks/branches, {} roots/rooty (everything non-trunk at this Y is treated as ROOT per your rule)", y, trunkCount, rootCount);
-    }
   }
 
   public void addMultiBlockStructures(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level) {
@@ -324,18 +252,10 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
 
     if (ModList.get().isLoaded("dynamictrees") && TreeHelper.getTreePart(restoreState) != TreeHelper.NULL_TREE_PART) {
-      // Explicit root/rooty skip (BasicRootsBlock, *root* in registry key/desc, or isRooty) to finally stop restoring DT roots. Non-root DT parts (branches, leaves, valid soil) proceed to setBlock. Debug skip added as issue persisted.
-      String blockKey = BuiltInRegistries.BLOCK.getKey(restoreState.getBlock()).toString().toLowerCase();
-      String descId = restoreState.getBlock().getDescriptionId().toLowerCase();
-      if (restoreState.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || descId.contains("root") || TreeHelper.isRooty(restoreState)) {
-        BlastPlaster.LOGGER.info("[BlastPlaster] SKIPPED restoring DT root at {} (root restore stripped - fully enforced)", pos);
-        return;
-      }
       level.setBlock(pos, restoreState, 3);
       level.updateNeighborsAt(pos, restoreState.getBlock());
 
-      // Root restore/claiming/stabilization stripped per request. Only non-root DT tree parts reach setBlock here.
-      BlastPlaster.LOGGER.info("[BlastPlaster] DT non-leaf block healed (root restore stripped) at {}", pos);
+      BlastPlaster.LOGGER.info("[BlastPlaster] DT block healed at {}", pos);
 
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
@@ -388,18 +308,14 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
     if (state.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || descId.contains("root") || TreeHelper.isRooty(state)) {
       partType = "ROOT_BLOCK";
-      if (state.getBlock() instanceof BasicRootsBlock) { partType = "BASIC_ROOTS"; }
     } else if (TreeHelper.isBranch(state)) {
       partType = "BRANCH";
     } else if (TreeHelper.isRooty(state)) {
       partType = "ROOTY";
-    } else if (TreeHelper.getRooty(state) != null) {
-      partType = "ROOTY_REF";
     }
 
     int radius = BlastPlasterUtil.getDTRadius(state);
-    BlastPlaster.LOGGER.info("[BlastPlaster] NON-LEAF DT BLOCK: type={} desc={} pos={} radius={}",
-            partType, state.getBlock().getDescriptionId(), pos, radius);
+    BlastPlaster.LOGGER.info("[BlastPlaster] NON-LEAF DT BLOCK: type={} pos={} radius={}", partType, pos, radius);
   }
 
   @Override @NotNull public CompoundTag save(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {

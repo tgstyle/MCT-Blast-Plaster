@@ -1,6 +1,5 @@
 package mctmods.blastplaster.util;
 
-import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 
@@ -23,7 +22,6 @@ import net.minecraft.world.phys.Vec3;
 
 import net.neoforged.fml.ModList;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -42,8 +40,6 @@ public class BlastPlasterUtil {
 
     private record ExplosionArea(AABB box, long expireTick) {}
 
-    private static Method dtIsLeavesMethod;
-
     static {
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
@@ -51,24 +47,6 @@ public class BlastPlasterUtil {
                     if (x != 0 || y != 0 || z != 0) { NEIGHBOR_POSITIONS.add(new BlockPos(x, y, z)); }
                 }
             }
-        }
-
-        if (ModList.get().isLoaded("dynamictrees")) {
-            try {
-                Class<?> dtTreeHelperClass = Class.forName("com.dtteam.dynamictrees.tree.TreeHelper");
-                dtIsLeavesMethod = dtTreeHelperClass.getMethod("isLeaves", BlockState.class);
-            } catch (Exception e) {
-                BlastPlaster.LOGGER.warn("[BlastPlaster] Failed to reflect Dynamic Trees TreeHelper", e);
-            }
-        }
-    }
-
-    private static boolean safeIsLeaves(BlockState state) {
-        if (dtIsLeavesMethod == null) return false;
-        try {
-            return (Boolean) dtIsLeavesMethod.invoke(null, state);
-        } catch (Exception e) {
-            return false;
         }
     }
 
@@ -108,6 +86,8 @@ public class BlastPlasterUtil {
     public static boolean shouldSuppressItemDrop(ItemEntity item) {
         Level rawLevel = item.level();
         if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+
+        if (item.getPersistentData().getBoolean("BlastPlasterControlledDrop")) { return false; }
 
         long now = serverLevel.getGameTime();
         recentExplosions.removeIf(area -> area.expireTick < now);
@@ -195,7 +175,7 @@ public class BlastPlasterUtil {
         else if (radius >= 4) { numLogs = level.random.nextBoolean() ? 1 : 0; }
 
         int numSticks = 0;
-        if (safeIsLeaves(state)) { numSticks = level.random.nextFloat() < 0.05f ? 1 : 0; }
+        if (TreeHelper.isLeaves(state)) { numSticks = level.random.nextFloat() < 0.05f ? 1 : 0; }
 
         ResourceLocation key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         String path = key.toString();
@@ -262,7 +242,7 @@ public class BlastPlasterUtil {
 
     public static void finalizeExplodedBlock(ServerLevel level, BlockPos pos, BlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
         if (effectiveMode == Config.ExplosionMode.VISUAL_TOSS) {
-            if (level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         } else if (effectiveMode == Config.ExplosionMode.HEAL) {
             if (Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         } else if (effectiveMode == Config.ExplosionMode.EJECT_DROPS) {
