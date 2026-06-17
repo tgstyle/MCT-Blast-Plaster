@@ -275,12 +275,9 @@ public class ExplosionEventHandler {
     Set<BlockPos> dtTreePos = new HashSet<>();
     Set<BlockPos> uniqueRoots = new HashSet<>();
 
-    // Strict 1.21.1 rule: ONLY expand from rooty/soil/branch blocks that were DIRECTLY in the blast
-    Set<BlockPos> directlyHitDT = new HashSet<>();
     for (BlockPos pos : new HashSet<>(affectedPos)) {
       BlockState state = level.getBlockState(pos);
-      if (TreeHelper.isBranch(state) || TreeHelper.isRooty(state) || state.getBlock() instanceof BasicRootsBlock) {
-        directlyHitDT.add(pos.immutable());
+      if (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state) || state.getBlock() instanceof BasicRootsBlock) {
         BlockPos rootPos = TreeHelper.findRootNode(level, pos);
         if (rootPos != BlockPos.ZERO) {
           uniqueRoots.add(rootPos.immutable());
@@ -288,7 +285,48 @@ public class ExplosionEventHandler {
       }
     }
 
-    // Proper DT network analysis only from directly hit rooty/branch blocks
+    if (uniqueRoots.isEmpty()) {
+      for (BlockPos pos : new HashSet<>(affectedPos)) {
+        BlockState state = level.getBlockState(pos);
+        if (TreeHelper.isBranch(state)) {
+          BlockPos rootPos = TreeHelper.findRootNode(level, pos);
+          if (rootPos != BlockPos.ZERO) {
+            uniqueRoots.add(rootPos.immutable());
+          }
+        }
+      }
+    }
+
+    // 1.21.1 re-architecture: all searches bounded by the Explosion itself
+    int hRadius = Math.max(6, (int)(explosionRadius * 1.8f) + 4);
+    int vDown = Math.max(12, (int)(explosionRadius * 3.5f));
+    int vUp = Math.max(8, (int)(explosionRadius * 2.0f));
+    double maxDistSq = (explosionRadius * 2.5f + 8) * (explosionRadius * 2.5f + 8);
+
+    for (BlockPos pos : new HashSet<>(affectedPos)) {
+      for (int dx = -hRadius; dx <= hRadius; dx++) {
+        for (int dy = -vDown; dy <= vUp; dy++) {
+          for (int dz = -hRadius; dz <= hRadius; dz++) {
+            if (dx == 0 && dy == 0 && dz == 0) continue;
+            BlockPos candidate = pos.offset(dx, dy, dz);
+            if (explosionCenter != null && candidate.distSqr(BlockPos.containing(explosionCenter)) > maxDistSq) continue;
+            if (affectedPos.contains(candidate)) continue;
+            BlockState s = level.getBlockState(candidate);
+            if (TreeHelper.isBranch(s) || TreeHelper.isLeaves(s)) {
+              dtTreePos.add(candidate.immutable());
+            }
+            if (TreeHelper.isRooty(s) || s.getBlock() instanceof BasicRootsBlock) {
+              dtTreePos.add(candidate.immutable());
+              BlockPos rootPos = TreeHelper.findRootNode(level, candidate);
+              if (rootPos != BlockPos.ZERO) {
+                uniqueRoots.add(rootPos.immutable());
+              }
+            }
+          }
+        }
+      }
+    }
+
     for (BlockPos rootPos : new HashSet<>(uniqueRoots)) {
       CollectorNode collector = new CollectorNode(dtTreePos);
       try {
@@ -298,23 +336,40 @@ public class ExplosionEventHandler {
       }
     }
 
-    // Small, targeted leaf collection ONLY around directly hit branches (no volume search outside blast)
-    int smallLeafRadius = 4;
-    for (BlockPos branch : directlyHitDT) {
-      for (int dx = -smallLeafRadius; dx <= smallLeafRadius; dx++) {
-        for (int dy = -smallLeafRadius; dy <= smallLeafRadius; dy++) {
-          for (int dz = -smallLeafRadius; dz <= smallLeafRadius; dz++) {
+    for (BlockPos rp : new HashSet<>(uniqueRoots)) {
+      if (!dtTreePos.contains(rp)) {
+        BlockState rs = level.getBlockState(rp);
+        if (TreeHelper.isRooty(rs) || rs.getBlock() instanceof BasicRootsBlock) {
+          dtTreePos.add(rp.immutable());
+        }
+      }
+    }
+
+    for (BlockPos rp : new HashSet<>(uniqueRoots)) {
+      BlockState rs = level.getBlockState(rp);
+      if (rs.getBlock() instanceof BasicRootsBlock || TreeHelper.isRooty(rs)) {
+        collectConnectedRoots(rp, dtTreePos, level);
+      }
+    }
+
+    Set<BlockPos> extraDTLeaves = new HashSet<>();
+    for (BlockPos branch : new HashSet<>(dtTreePos)) {
+      for (int dx = -5; dx <= 5; dx++) {
+        for (int dy = -5; dy <= 5; dy++) {
+          for (int dz = -5; dz <= 5; dz++) {
             if (dx == 0 && dy == 0 && dz == 0) continue;
             BlockPos candidate = branch.offset(dx, dy, dz);
+            if (explosionCenter != null && candidate.distSqr(BlockPos.containing(explosionCenter)) > maxDistSq) continue;
             if (dtTreePos.contains(candidate) || affectedPos.contains(candidate)) continue;
             BlockState s = level.getBlockState(candidate);
             if (TreeHelper.isLeaves(s)) {
-              dtTreePos.add(candidate.immutable());
+              extraDTLeaves.add(candidate.immutable());
             }
           }
         }
       }
     }
+    dtTreePos.addAll(extraDTLeaves);
 
     if (dtTreePos.size() > Config.getMaxTreeSize()) {
       BlastPlaster.LOGGER.info("[BlastPlaster] Skipped huge DT tree ({} > max)", dtTreePos.size());
@@ -329,7 +384,7 @@ public class ExplosionEventHandler {
         added++;
       }
     }
-    BlastPlaster.LOGGER.info("[BlastPlaster] DT added {} new blocks (strict root/branch expansion only)", added);
+    BlastPlaster.LOGGER.info("[BlastPlaster] DT added {} new blocks", added);
     return added > 0 || !uniqueRoots.isEmpty();
   }
 
@@ -646,6 +701,26 @@ public class ExplosionEventHandler {
   private int getLeafDistance(BlockState state) {
     if (state.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock) return state.getValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE);
     return 7;
+  }
+
+  private void collectConnectedRoots(BlockPos start, Set<BlockPos> dtTreePos, ServerLevel level) {
+    Set<BlockPos> visited = new HashSet<>();
+    Deque<BlockPos> queue = new ArrayDeque<>();
+    queue.add(start);
+    visited.add(start);
+    while (!queue.isEmpty()) {
+      BlockPos current = queue.poll();
+      for (BlockPos offset : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
+        BlockPos adj = current.offset(offset);
+        if (visited.contains(adj)) continue;
+        BlockState s = level.getBlockState(adj);
+        if (s.getBlock() instanceof BasicRootsBlock || TreeHelper.isRooty(s)) {
+          visited.add(adj);
+          dtTreePos.add(adj.immutable());
+          queue.add(adj);
+        }
+      }
+    }
   }
 
   @SubscribeEvent public void onItemEntityJoin(EntityJoinLevelEvent event) {
