@@ -36,7 +36,12 @@ import net.neoforged.fml.ModList;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeMap;
 
 import com.dtteam.dynamictrees.tree.TreeHelper;
 import com.dtteam.dynamictrees.block.soil.SoilBlock;
@@ -337,6 +342,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
   }
 
   public void deserializeNBT(CompoundTag tag) {
+    BlastPlaster.LOGGER.info("[BlastPlaster] deserializeNBT called");
     ListTag tagList = tag.getList("healTaskList", Tag.TAG_COMPOUND);
     List<BlockStatePosWrapper> allWrappers = new ArrayList<>();
     for (Tag t : tagList) {
@@ -352,7 +358,15 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (!allWrappers.isEmpty()) {
       for (BlockStatePosWrapper w : allWrappers) {
         BlockState state = w.getState();
-        if (state.getBlock() instanceof VineBlock) { healTask.enqueue(HealPhase.FLORA, 1, w); }else if (state.getBlock() == Blocks.BAMBOO || state.getBlock() == Blocks.SUGAR_CANE || TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.getRooty(state) != null) { healTask.enqueue(HealPhase.TREE, 1, w); }else if (state.is(BlockTags.FLOWERS) || state.getBlock() == Blocks.SHORT_GRASS || state.getBlock() == Blocks.TALL_GRASS || state.getBlock() == Blocks.FERN || state.getBlock() == Blocks.LARGE_FERN || state.getBlock() == Blocks.DEAD_BUSH || state.getBlock() == Blocks.SWEET_BERRY_BUSH) { healTask.enqueue(HealPhase.FLORA, 1, w); }else { healTask.enqueue(HealPhase.GROUND, 1, w); }
+        if (state.getBlock() instanceof VineBlock) {
+          healTask.enqueue(HealPhase.FLORA, 1, w);
+        } else if (state.getBlock() == Blocks.BAMBOO || state.getBlock() == Blocks.SUGAR_CANE || (ModList.get().isLoaded("dynamictrees") && (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.getRooty(state) != null))) {
+          healTask.enqueue(HealPhase.TREE, 1, w);
+        } else if (state.is(BlockTags.FLOWERS) || state.getBlock() == Blocks.SHORT_GRASS || state.getBlock() == Blocks.TALL_GRASS || state.getBlock() == Blocks.FERN || state.getBlock() == Blocks.LARGE_FERN || state.getBlock() == Blocks.DEAD_BUSH || state.getBlock() == Blocks.SWEET_BERRY_BUSH) {
+          healTask.enqueue(HealPhase.FLORA, 1, w);
+        } else {
+          healTask.enqueue(HealPhase.GROUND, 1, w);
+        }
       }
       dirtyFlag = true;
     }
