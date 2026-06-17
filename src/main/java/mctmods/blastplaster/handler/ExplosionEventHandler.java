@@ -38,7 +38,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import net.neoforged.bus.api.SubscribeEvent;
@@ -68,7 +67,6 @@ public class ExplosionEventHandler {
 
   private static long lastFlashTick = 0;
   private static final Map<BlockPos, Long> lastProcessedPositions = new HashMap<>();
-  private final Map<BlockPos, BlockState> preExplosionTreeSnapshot = new HashMap<>();
 
   @SubscribeEvent public void onDetonate(ExplosionEvent.Detonate event) {
     if (event.getLevel().isClientSide) { return; }
@@ -111,12 +109,6 @@ public class ExplosionEventHandler {
     if (processThis) {
       ServerLevel serverLevel = (ServerLevel) event.getLevel();
       Vec3 explosionCenter = explosion.center();
-      float explosionRadius = (float) Math.max(3.0, explosion.radius());
-
-      preExplosionTreeSnapshot.clear();
-      if (Config.healFullTrees()) {
-        captureScopedPreExplosionTreeSnapshot(serverLevel, explosionCenter, explosionRadius + 8.0f);
-      }
 
       long currentTick = serverLevel.getGameTime();
       lastProcessedPositions.entrySet().removeIf(e -> currentTick - e.getValue() > 600L);
@@ -260,52 +252,6 @@ public class ExplosionEventHandler {
       }
 
       if (Config.enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
-
-      preExplosionTreeSnapshot.clear();
-    }
-  }
-
-  private void captureScopedPreExplosionTreeSnapshot(ServerLevel level, Vec3 center, float radius) {
-    AABB box = new AABB(center.x - radius, center.y - radius, center.z - radius,
-            center.x + radius, center.y + radius, center.z + radius);
-
-    int minChunkX = (int) Math.floor(box.minX) >> 4;
-    int maxChunkX = (int) Math.floor(box.maxX) >> 4;
-    int minChunkZ = (int) Math.floor(box.minZ) >> 4;
-    int maxChunkZ = (int) Math.floor(box.maxZ) >> 4;
-
-    for (int cx = minChunkX; cx <= maxChunkX; cx++) {
-      for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-        if (!level.hasChunk(cx, cz)) { continue; }
-
-        int minX = Math.max((int) box.minX, cx << 4);
-        int maxX = Math.min((int) box.maxX, (cx << 4) + 15);
-        int minZ = Math.max((int) box.minZ, cz << 4);
-        int maxZ = Math.min((int) box.maxZ, (cz << 4) + 15);
-
-        for (int x = minX; x <= maxX; x++) {
-          for (int z = minZ; z <= maxZ; z++) {
-            for (int y = (int) box.minY; y <= (int) box.maxY; y++) {
-              BlockPos pos = new BlockPos(x, y, z);
-              if (!box.contains(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5)) { continue; }
-
-              BlockState state = level.getBlockState(pos);
-              if (state.isAir()) { continue; }
-
-              boolean isTreeBlock = state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) ||
-                      (ModList.get().isLoaded("dynamictrees") && (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state)));
-
-              if (isTreeBlock) {
-                preExplosionTreeSnapshot.put(pos.immutable(), state);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if (!preExplosionTreeSnapshot.isEmpty()) {
-      BlastPlaster.LOGGER.info("[BlastPlaster] Pre-explosion tree snapshot captured {} blocks (radius {})", preExplosionTreeSnapshot.size(), radius);
     }
   }
 
