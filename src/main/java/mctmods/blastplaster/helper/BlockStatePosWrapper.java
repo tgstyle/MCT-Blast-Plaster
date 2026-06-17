@@ -17,7 +17,7 @@ public class BlockStatePosWrapper {
         this.state = state;
         this.pos = pos;
         BlockEntity entity = level.getBlockEntity(pos);
-        if (entity != null) { this.entityTag = entity.saveWithoutMetadata(); }
+        if (entity != null) { this.entityTag = entity.saveWithoutMetadata(level.registryAccess()); }
     }
 
     public BlockStatePosWrapper() {}
@@ -36,7 +36,7 @@ public class BlockStatePosWrapper {
 
     public void readNBT(CompoundTag tag, Level level) {
         this.state = NbtUtils.readBlockState(level.holderLookup(Registries.BLOCK), tag.getCompound("block"));
-        this.pos = NbtUtils.readBlockPos(tag.getCompound("pos"));
+        this.pos = NbtUtils.readBlockPos(tag, "pos").orElse(BlockPos.ZERO);
         if (tag.contains("entity")) { this.entityTag = tag.getCompound("entity"); }
     }
 

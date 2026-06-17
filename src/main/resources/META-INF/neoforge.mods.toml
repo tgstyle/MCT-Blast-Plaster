@@ -1,5 +1,5 @@
 modLoader="javafml"
-loaderVersion="[47,)"
+loaderVersion="[1,)"
 license="LGPL-3.0"
 
 [[mods]]
@@ -13,15 +13,15 @@ description="Got a Blast? Heal it Fast!"
 credits="Thanks to EyZox, Lothrazar for inspiration from CreeperHeal"
 
 [[dependencies.blastplaster]]
-modId="forge"
-mandatory=true
-versionRange="[47,)"
+modId="neoforge"
+type="required"
+versionRange="[21.1,)"
 ordering="NONE"
 side="BOTH"
 
 [[dependencies.blastplaster]]
 modId="minecraft"
-mandatory=true
-versionRange="[1.20.1,)"
+type="required"
+versionRange="[1.21.1,1.21.2)"
 ordering="NONE"
 side="BOTH"

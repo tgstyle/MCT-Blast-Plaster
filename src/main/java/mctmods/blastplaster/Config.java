@@ -1,26 +1,19 @@
 package mctmods.blastplaster;
 
-import com.electronwill.nightconfig.core.file.CommentedFileConfig;
-import com.electronwill.nightconfig.core.io.WritingMode;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraftforge.common.ForgeConfigSpec;
-import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
-import net.minecraftforge.common.ForgeConfigSpec.ConfigValue;
-import net.minecraftforge.common.ForgeConfigSpec.EnumValue;
-import net.minecraftforge.common.ForgeConfigSpec.IntValue;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.registries.ForgeRegistries;
+
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 public class Config {
 
@@ -30,43 +23,44 @@ public class Config {
     VISUAL_TOSS
   }
 
-  private static final ForgeConfigSpec SPEC;
+  @SuppressWarnings("unused")
+  public static final ModConfigSpec SPEC;
 
-  private static final EnumValue<ExplosionMode> EXPLOSION_MODE;
-  private static final BooleanValue ENABLE_FAKE_TOSSED_BLOCKS;
-  private static final BooleanValue ENABLE_EXPLOSION_FLASH;
-  private static final IntValue EXPLOSION_FLASH_DURATION;
-  private static final IntValue EXPLOSION_FLASH_LIGHT_LEVEL;
-  private static final IntValue EXPLOSION_FLASH_PARTICLE_COUNT;
-  private static final IntValue EXPLOSION_FLASH_PULSES;
-  private static final BooleanValue ENABLE_EXPLOSION_SMOKE;
-  private static final IntValue EXPLOSION_SMOKE_DURATION;
-  private static final IntValue EXPLOSION_SMOKE_PARTICLE_COUNT;
-  private static final BooleanValue PLAYER_TNT_ALWAYS_DROPS;
-  private static final BooleanValue PLAYER_TNT_DROP_FULL_BLOCKS;
+  private static final ModConfigSpec.EnumValue<ExplosionMode> EXPLOSION_MODE;
+  private static final ModConfigSpec.BooleanValue ENABLE_FAKE_TOSSED_BLOCKS;
+  private static final ModConfigSpec.BooleanValue ENABLE_EXPLOSION_FLASH;
+  private static final ModConfigSpec.IntValue EXPLOSION_FLASH_DURATION;
+  private static final ModConfigSpec.IntValue EXPLOSION_FLASH_LIGHT_LEVEL;
+  private static final ModConfigSpec.IntValue EXPLOSION_FLASH_PARTICLE_COUNT;
+  private static final ModConfigSpec.IntValue EXPLOSION_FLASH_PULSES;
+  private static final ModConfigSpec.BooleanValue ENABLE_EXPLOSION_SMOKE;
+  private static final ModConfigSpec.IntValue EXPLOSION_SMOKE_DURATION;
+  private static final ModConfigSpec.IntValue EXPLOSION_SMOKE_PARTICLE_COUNT;
+  private static final ModConfigSpec.BooleanValue PLAYER_TNT_ALWAYS_DROPS;
+  private static final ModConfigSpec.BooleanValue PLAYER_TNT_DROP_FULL_BLOCKS;
 
-  private static final IntValue MIN_TICKS_BEFORE_HEAL;
-  private static final IntValue RANDOM_TICK_VAR;
-  private static final BooleanValue OVERRIDE_BLOCKS;
-  private static final BooleanValue HEAL_FULL_TREES;
+  private static final ModConfigSpec.IntValue MIN_TICKS_BEFORE_HEAL;
+  private static final ModConfigSpec.IntValue RANDOM_TICK_VAR;
+  private static final ModConfigSpec.BooleanValue OVERRIDE_BLOCKS;
+  private static final ModConfigSpec.BooleanValue HEAL_FULL_TREES;
 
-  private static final BooleanValue HEAL_CREEPERS;
-  private static final BooleanValue HEAL_NONPLAYER_TNT;
-  private static final BooleanValue HEAL_WITHER;
-  private static final BooleanValue HEAL_ALL;
-  private static final BooleanValue PROCESS_PLAYER_IGNITED_TNT;
-  private static final ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
+  private static final ModConfigSpec.BooleanValue HEAL_CREEPERS;
+  private static final ModConfigSpec.BooleanValue HEAL_NONPLAYER_TNT;
+  private static final ModConfigSpec.BooleanValue HEAL_WITHER;
+  private static final ModConfigSpec.BooleanValue HEAL_ALL;
+  private static final ModConfigSpec.BooleanValue PROCESS_PLAYER_IGNITED_TNT;
+  private static final ModConfigSpec.ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
 
-  private static final BooleanValue ENABLE_ALEXSCAVES_NUKES;
+  private static final ModConfigSpec.BooleanValue ENABLE_ALEXSCAVES_NUKES;
 
-  private static final BooleanValue DT_SPECIAL_DROPS;
-  private static final ConfigValue<List<? extends String>> DT_LOG_MAPPINGS;
+  private static final ModConfigSpec.BooleanValue DT_SPECIAL_DROPS;
+  private static final ModConfigSpec.ConfigValue<List<? extends String>> DT_LOG_MAPPINGS;
 
-  private static final ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
-  private static final IntValue MAX_TREE_SIZE;
+  private static final ModConfigSpec.ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
+  private static final ModConfigSpec.IntValue MAX_TREE_SIZE;
 
-  private static final BooleanValue ENABLE_DROP_SUPPRESSION;
-  private static final BooleanValue PREVENT_MOB_DROPS;
+  private static final ModConfigSpec.BooleanValue ENABLE_DROP_SUPPRESSION;
+  private static final ModConfigSpec.BooleanValue PREVENT_MOB_DROPS;
 
   private static final Map<TagKey<Block>, Block> TREE_MAP = new HashMap<>();
   private static final Map<String, Block> DT_LOG_MAP = new HashMap<>();
@@ -74,7 +68,7 @@ public class Config {
   private static final List<String> DT_SUFFIXES = Arrays.asList("_branch", "_leaves", "_root", "_surface_root", "_fancy_branch", "_cactus", "_bark", "_fruited");
 
   static {
-    final ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+    final ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
     builder.push(BlastPlaster.MODID);
 
     builder.comment(
@@ -148,7 +142,7 @@ public class Config {
     PROCESS_PLAYER_IGNITED_TNT = builder.comment("If true (default), player-ignited TNT explosions are processed (subject to PlayerTNTAlwaysDrops). Set false to completely ignore player TNT like vanilla.")
             .define("ProcessPlayerIgnitedTNT", true);
     CUSTOM_ENTITIES_TO_HEAL = builder.comment("Extra entity IDs (modid:entity) whose explosions should be processed.")
-            .defineListAllowEmpty("CustomEntitiesToHeal", List.of("undeadnights:demolition_zombie"), s -> s instanceof String);
+            .defineListAllowEmpty("CustomEntitiesToHeal", List.of("undeadnights:demolition_zombie"), () -> "modid:entity", s -> s instanceof String);
     builder.pop();
 
     builder.comment(
@@ -185,7 +179,7 @@ public class Config {
                             "dynamictrees:bamboo=bamboo",
                             "dynamictrees:azalea=oak_log"
                     ),
-                    s -> s instanceof String);
+                    () -> "dynamictrees:oak=oak_log", s -> s instanceof String);
     ENABLE_DROP_SUPPRESSION = builder.comment("Prevents ANY stray ItemEntities (seeds, sticks, bamboo, vines, etc.) from ever spawning in HEAL or VISUAL_TOSS modes by cancelling them the instant they try to join the world. This is the core safety system for non-EJECT modes (no late scavenging anymore). Default true.")
             .define("EnableDropSuppression", true);
     builder.pop();
@@ -208,7 +202,7 @@ public class Config {
     builder.push("trees");
     TREE_LOG_LEAF_PAIRS = builder.comment("Custom tree log<->leaf pairings for full tree healing.",
                     "Format: modid:log_tag=modid:leaf_block (only needed for unusual trees)")
-            .defineListAllowEmpty("TreeLogLeafPairs", List.of(), s -> s instanceof String);
+            .defineListAllowEmpty("TreeLogLeafPairs", List.of(), () -> "modid:log_tag=modid:leaf_block", s -> s instanceof String);
     MAX_TREE_SIZE = builder.comment("Max blocks allowed in a tree for full healing (prevents lag). Large old-growth jungle trees often exceed 7500 blocks; Alex's Caves nukes hit massive areas - set higher if you see warnings.")
             .defineInRange("MaxTreeSize", 20000, 0, 50000);
     builder.pop();
@@ -219,9 +213,6 @@ public class Config {
   private Config() {}
 
   public static void load() {
-    CommentedFileConfig configData = CommentedFileConfig.builder(FMLPaths.CONFIGDIR.get().resolve(BlastPlaster.MODID + "-common.toml")).sync().autosave().writingMode(WritingMode.REPLACE).build();
-    configData.load();
-    SPEC.setConfig(configData);
     buildDTLogMap();
     validateConfig();
   }
@@ -270,18 +261,20 @@ public class Config {
   private static void buildMaps() {
     TREE_MAP.clear();
 
-    for (Block leafBlock : ForgeRegistries.BLOCKS.getValues()) {
-      ResourceLocation loc = ForgeRegistries.BLOCKS.getKey(leafBlock);
-      if (loc != null && loc.getPath().endsWith("_leaves")) {
+    BuiltInRegistries.BLOCK.stream().forEach(leafBlock -> {
+      ResourceLocation loc = BuiltInRegistries.BLOCK.getKey(leafBlock);
+      if (loc.getPath().endsWith("_leaves")) {
         String path = loc.getPath();
         String prefix = path.substring(0, path.length() - "_leaves".length());
         String logPath = prefix + "_logs";
         ResourceLocation logLoc = ResourceLocation.fromNamespaceAndPath(loc.getNamespace(), logPath);
         TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
 
-        if (!Objects.requireNonNull(ForgeRegistries.BLOCKS.tags()).getTag(logTag).isEmpty()) { TREE_MAP.put(logTag, leafBlock); }
+        if (BuiltInRegistries.BLOCK.getTag(logTag).map(holders -> holders.size() > 0).orElse(false)) {
+          TREE_MAP.put(logTag, leafBlock);
+        }
       }
-    }
+    });
 
     for (String pair : TREE_LOG_LEAF_PAIRS.get()) {
       String[] parts = pair.split("=");
@@ -290,8 +283,8 @@ public class Config {
         ResourceLocation leafLoc = ResourceLocation.tryParse(parts[1].trim());
         if (logLoc != null && leafLoc != null) {
           TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
-          Block leafBlock = ForgeRegistries.BLOCKS.getValue(leafLoc);
-          if (leafBlock != null && !Objects.requireNonNull(ForgeRegistries.BLOCKS.tags()).getTag(logTag).isEmpty()) {
+          Block leafBlock = BuiltInRegistries.BLOCK.getOptional(leafLoc).orElse(null);
+          if (leafBlock != null && BuiltInRegistries.BLOCK.getTag(logTag).map(holders -> holders.size() > 0).orElse(false)) {
             TREE_MAP.put(logTag, leafBlock);
           }
         }
@@ -307,8 +300,7 @@ public class Config {
         String dtKey = parts[0].trim().toLowerCase();
         ResourceLocation logLoc = ResourceLocation.tryParse(parts[1].trim());
         if (logLoc != null) {
-          Block logBlock = ForgeRegistries.BLOCKS.getValue(logLoc);
-          if (logBlock != null) { DT_LOG_MAP.put(dtKey, logBlock); }
+          BuiltInRegistries.BLOCK.getOptional(logLoc).ifPresent(logBlock -> DT_LOG_MAP.put(dtKey, logBlock));
         }
       }
     }

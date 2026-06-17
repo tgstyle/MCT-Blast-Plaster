@@ -5,8 +5,7 @@ import java.util.Collection;
 import java.util.LinkedList;
 
 public class TickingHealList extends TickingLinkedList<Collection<BlockStatePosWrapper>> {
-    @Override
-    protected Collection<BlockStatePosWrapper> combine(Collection<BlockStatePosWrapper> first, Collection<BlockStatePosWrapper> second) {
+    @Override protected Collection<BlockStatePosWrapper> combine(Collection<BlockStatePosWrapper> first, Collection<BlockStatePosWrapper> second) {
         second.addAll(first);
         return second;
     }

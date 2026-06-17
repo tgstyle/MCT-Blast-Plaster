@@ -4,20 +4,20 @@ import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.server.level.ServerLevel;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
 
 public class WorldTickEventHandler {
 
   public WorldTickEventHandler() {
-    MinecraftForge.EVENT_BUS.register(this);
+    NeoForge.EVENT_BUS.register(this);
   }
 
-  @SubscribeEvent
-  public void onWorldTick(TickEvent.LevelTickEvent event) {
-    if (event.level.isClientSide) return;
-    WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer((ServerLevel) event.level);
+  @SubscribeEvent public void onWorldTick(LevelTickEvent.Pre event) {
+    if (event.getLevel().isClientSide) { return; }
+    WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer((ServerLevel) event.getLevel());
     if (worldHealer != null) {
       worldHealer.onTick();
     }

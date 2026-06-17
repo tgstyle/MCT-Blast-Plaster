@@ -1,6 +1,7 @@
 {
     "pack": {
-        "description": "forgecreeperheal resources",
-        "pack_format": 9
+        "description": "BlastPlaster resources",
+        "pack_format": 48,
+        "supported_formats": [48, 48]
     }
 }

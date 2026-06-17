@@ -122,9 +122,7 @@ repositories {
 
 dependencies {
     implementation "net.neoforged:neoforge:${version_neoforge}"
-
-    // Update CurseMaven coordinate for 1.21.1 DynamicTrees
-    implementation "curse.maven:dynamictrees-252818:7340373"
+    implementation "curse.maven:dynamictrees-252818:8227322"
 }
 
 def customGradle = rootProject.file('custom.gradle')
@@ -157,7 +155,7 @@ build.dependsOn bumpVersion
 
 tasks.register('sourcesJar', Jar) {
     dependsOn classes
-    archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
+    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
     archiveClassifier = 'sources'
     from sourceSets.main.allSource
 }
@@ -232,6 +230,6 @@ jar.dependsOn bumpVersion
 sourcesJar.dependsOn bumpVersion
 
 jar {
-    archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
+    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
     archiveClassifier.set('')
 }

@@ -6,16 +6,17 @@ import java.util.Map;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.server.level.ServerLevel;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.level.LevelEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.level.LevelEvent;
 
 public class WorldEventHandler {
 
   private final Map<ServerLevel, WorldHealerSaveDataSupplier> worldHealers = new HashMap<>();
 
   public WorldEventHandler() {
-    MinecraftForge.EVENT_BUS.register(this);
+    NeoForge.EVENT_BUS.register(this);
   }
 
   public Map<ServerLevel, WorldHealerSaveDataSupplier> getWorldHealers() {
@@ -24,13 +25,13 @@ public class WorldEventHandler {
 
   @SubscribeEvent
   public void onLoad(LevelEvent.Load event) {
-    if (event.getLevel().isClientSide() || !(event.getLevel() instanceof ServerLevel level)) return;
+    if (event.getLevel().isClientSide() || !(event.getLevel() instanceof ServerLevel level)) { return; }
     worldHealers.put(level, WorldHealerSaveDataSupplier.loadWorldHealer(level));
   }
 
   @SubscribeEvent
   public void onUnload(LevelEvent.Unload event) {
-    if (event.getLevel().isClientSide()) return;
+    if (event.getLevel().isClientSide()) { return; }
     worldHealers.remove((ServerLevel) event.getLevel());
   }
 }

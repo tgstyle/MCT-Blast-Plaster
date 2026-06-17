@@ -1,5 +1,8 @@
 package mctmods.blastplaster.util.compat;
 
+import com.dtteam.dynamictrees.api.network.MapSignal;
+import com.dtteam.dynamictrees.block.branch.BasicRootsBlock;
+import com.dtteam.dynamictrees.tree.TreeHelper;
 import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.Config.ExplosionMode;
@@ -8,6 +11,8 @@ import mctmods.blastplaster.util.BlastPlasterUtil;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -20,15 +25,18 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.event.entity.EntityJoinLevelEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.registries.ForgeRegistries;
+
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+
+import net.neoforged.fml.ModList;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -40,9 +48,9 @@ import java.util.Set;
 @SuppressWarnings("unchecked")
 public class AlexsCavesCompat {
 
-    private static final EntityType<?> NUCLEAR_EXPLOSION = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.fromNamespaceAndPath("alexscaves", "nuclear_explosion"));
+    private static final EntityType<?> NUCLEAR_EXPLOSION = BuiltInRegistries.ENTITY_TYPE.getOptional(ResourceLocation.fromNamespaceAndPath("alexscaves", "nuclear_explosion")).orElse(null);
     private static final TagKey<Block> NUKE_PROOF = TagKey.create(Registries.BLOCK, ResourceLocation.fromNamespaceAndPath("alexscaves", "nuke_proof"));
-    private static final Block TREMORZILLA_EGG = ForgeRegistries.BLOCKS.getValue(ResourceLocation.fromNamespaceAndPath("alexscaves", "tremorzilla_egg"));
+    private static final Block TREMORZILLA_EGG = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.fromNamespaceAndPath("alexscaves", "tremorzilla_egg")).orElse(null);
 
     private static net.minecraft.network.syncher.EntityDataAccessor<Float> SIZE_ACCESSOR = null;
     private static Method spawnDinosaursMethod = null;
@@ -58,8 +66,9 @@ public class AlexsCavesCompat {
 
             Class<?> eggClass = Class.forName("com.github.alexmodguy.alexscaves.server.block.TremorzillaEggBlock");
             spawnDinosaursMethod = eggClass.getMethod("spawnDinosaurs", Level.class, BlockPos.class, BlockState.class);
+        } catch (Exception e) {
+            BlastPlaster.LOGGER.warn("Alex's Caves compatibility: Reflection failed for accessors/methods.", e);
         }
-        catch (Exception e) { BlastPlaster.LOGGER.warn("Alex's Caves compatibility: Reflection failed for accessors/methods. Using safe fallbacks.", e); }
     }
 
     @SubscribeEvent public void onNuclearExplosionSpawn(EntityJoinLevelEvent event) {
@@ -88,7 +97,7 @@ public class AlexsCavesCompat {
 
         BlockPos.MutableBlockPos carve = new BlockPos.MutableBlockPos();
         final float fixedWidth = 0.85F;
-        Explosion dummyExplosion = new Explosion(world, null, center.getX(), center.getY(), center.getZ(), 10.0F, List.of());
+        Explosion dummyExplosion = new Explosion(world, null, center.getX(), center.getY(), center.getZ(), 10.0F, false, Explosion.BlockInteraction.DESTROY);
 
         for (int cx = -chunksAffected; cx <= chunksAffected; cx++) {
             for (int cy = -chunksAffected; cy <= chunksAffected; cy++) {
@@ -129,20 +138,26 @@ public class AlexsCavesCompat {
 
         if (toProcess.isEmpty()) { return; }
 
-        if (Config.healFullTrees()) {
-            WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(world);
-            if (expansionHealer != null) { expansionHealer.addExtraTreeBlocks(toProcess, affectedPos, world); }
+        if (Config.healFullTrees() && ModList.get().isLoaded("dynamictrees")) {
+            addFullTreeExpansion(toProcess, affectedPos, world);
         }
-
-        if (mode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, world); }
-        if (mode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, world); }
 
         if (mode == ExplosionMode.HEAL) {
             WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer(world);
-            if (worldHealer != null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, world); }
+            if (worldHealer != null) {
+                worldHealer.addMultiBlockStructures(toProcess, affectedPos, world);
+                worldHealer.prepareAndScheduleHealing(toProcess, world);
+            }
         }
 
-        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos); }
+        if (mode != ExplosionMode.EJECT_DROPS) {
+            BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, world);
+            BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, world);
+        }
+
+        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) {
+            BlastPlasterUtil.recordExplosionArea(world, affectedPos);
+        }
 
         for (BlockStatePosWrapper wrapper : toProcess) {
             BlockPos pos = wrapper.getPos();
@@ -174,5 +189,60 @@ public class AlexsCavesCompat {
             float visualChance = BlastPlasterUtil.getVisualSpawnChance(false, true);
             BlastPlasterUtil.finalizeExplodedBlock(world, pos, state, mode, realDrop, visualChance);
         }
+    }
+
+    private static void addFullTreeExpansion(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
+        if (!ModList.get().isLoaded("dynamictrees")) { return; }
+
+        Set<BlockPos> dtTreePos = new HashSet<>();
+
+        for (BlockPos pos : new HashSet<>(affectedPos)) {
+            BlockState state = level.getBlockState(pos);
+            if (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state) || state.getBlock() instanceof BasicRootsBlock) {
+                BlockPos rootPos = TreeHelper.findRootNode(level, pos);
+                if (rootPos != BlockPos.ZERO) {
+                    CollectorNode collector = new CollectorNode(dtTreePos);
+                    TreeHelper.startAnalysisFromRoot(level, rootPos, new MapSignal(collector));
+                }
+            }
+        }
+
+        for (BlockPos pos : new HashSet<>(affectedPos)) {
+            for (int dx = -12; dx <= 12; dx++) {
+                for (int dy = -10; dy <= 6; dy++) {
+                    for (int dz = -12; dz <= 12; dz++) {
+                        BlockPos candidate = pos.offset(dx, dy, dz);
+                        if (affectedPos.contains(candidate)) continue;
+                        BlockState s = level.getBlockState(candidate);
+                        if (TreeHelper.isBranch(s) || TreeHelper.isLeaves(s) || TreeHelper.isRooty(s) || s.getBlock() instanceof BasicRootsBlock) {
+                            dtTreePos.add(candidate);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (dtTreePos.size() > Config.getMaxTreeSize()) {
+            BlastPlaster.LOGGER.info("[BlastPlaster] [AlexsCaves] Skipped huge DT expansion ({} blocks)", dtTreePos.size());
+            return;
+        }
+
+        int addedCount = 0;
+        for (BlockPos p : dtTreePos) {
+            if (!affectedPos.contains(p)) {
+                toProcess.add(new BlockStatePosWrapper(level, p, level.getBlockState(p)));
+                affectedPos.add(p);
+                addedCount++;
+            }
+        }
+        BlastPlaster.LOGGER.info("[BlastPlaster] [AlexsCaves] DT expansion added {} new blocks", addedCount);
+    }
+
+    private record CollectorNode(Set<BlockPos> nodeSet) implements com.dtteam.dynamictrees.api.network.NodeInspector {
+        @Override public boolean run(BlockState state, LevelAccessor level, BlockPos pos, Direction fromDir) {
+            nodeSet.add(pos.immutable());
+            return true;
+        }
+        @Override public boolean returnRun(BlockState state, LevelAccessor level, BlockPos pos, Direction fromDir) { return false; }
     }
 }
