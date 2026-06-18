@@ -11,7 +11,6 @@ import mctmods.blastplaster.util.BlastPlasterUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -47,9 +46,8 @@ import com.dtteam.dynamictrees.tree.TreeHelper;
 import com.dtteam.dynamictrees.block.soil.SoilBlock;
 import com.dtteam.dynamictrees.block.soil.SpeciesBlockEntity;
 import com.dtteam.dynamictrees.tree.species.Species;
-import com.dtteam.dynamictrees.block.branch.BasicRootsBlock;
 
-public class WorldHealerSaveDataSupplier extends SavedData implements java.util.function.Supplier<Object> {
+public class WorldHealerSaveDataSupplier extends SavedData {
 
   private Level level;
   private final MultiPhaseTickingHealList healTask = new MultiPhaseTickingHealList();
@@ -62,7 +60,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (healTask.isEmpty()) { return; }
     Collection<BlockStatePosWrapper> blocksToHeal = healTask.processTick();
     if (blocksToHeal != null && !blocksToHeal.isEmpty()) {
-      BlastPlaster.LOGGER.info("[BlastPlaster] onTick processing {} blocks this tick", blocksToHeal.size());
       for (BlockStatePosWrapper blockData : blocksToHeal) { heal(blockData); }
       dirtyFlag = true;
     }
@@ -82,8 +79,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
         }
       }
     }
-
-    BlastPlaster.LOGGER.info("[BlastPlaster] DT PARTS collected: {}", dtParts.size());
 
     if (!dtParts.isEmpty() && ModList.get().isLoaded("dynamictrees")) {
       dtParts.sort(Comparator.comparingInt((BlockStatePosWrapper w) -> w.getPos().getY()).reversed());
@@ -110,8 +105,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
         ground.add(w);
       }
     }
-
-    BlastPlaster.LOGGER.info("[BlastPlaster] GROUND collected: {}, FLORA: {}, VINES: {}, BAMBOO_CANE: {}", ground.size(), flora.size(), vines.size(), bambooCane.size());
 
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : ground) {
@@ -240,12 +233,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     BlockPos pos = blockData.getPos();
     BlockState restoreState = blockData.getState();
 
-    BlastPlaster.LOGGER.info("[BlastPlaster] heal() called for block={} at {}", restoreState.getBlock(), pos);
-
-    if (ModList.get().isLoaded("dynamictrees")) {
-      logNonLeafDTBlocks(blockData);
-    }
-
     Block block = restoreState.getBlock();
     if (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE) {
       level.setBlock(pos, restoreState, 3);
@@ -259,8 +246,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (ModList.get().isLoaded("dynamictrees") && TreeHelper.getTreePart(restoreState) != TreeHelper.NULL_TREE_PART) {
       level.setBlock(pos, restoreState, 3);
       level.updateNeighborsAt(pos, restoreState.getBlock());
-
-      BlastPlaster.LOGGER.info("[BlastPlaster] DT block healed at {}", pos);
 
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
@@ -300,29 +285,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
   }
 
-  private void logNonLeafDTBlocks(BlockStatePosWrapper blockData) {
-    BlockState state = blockData.getState();
-    BlockPos pos = blockData.getPos();
-    if (!ModList.get().isLoaded("dynamictrees")) { return; }
-    if (TreeHelper.getTreePart(state) == TreeHelper.NULL_TREE_PART) { return; }
-    if (TreeHelper.isLeaves(state)) { return; }
-
-    String partType = "UNKNOWN_DT_PART";
-    String blockKey = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().toLowerCase();
-    String descId = state.getBlock().getDescriptionId().toLowerCase();
-
-    if (state.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || descId.contains("root") || TreeHelper.isRooty(state)) {
-      partType = "ROOT_BLOCK";
-    } else if (TreeHelper.isBranch(state)) {
-      partType = "BRANCH";
-    } else if (TreeHelper.isRooty(state)) {
-      partType = "ROOTY";
-    }
-
-    int radius = BlastPlasterUtil.getDTRadius(state);
-    BlastPlaster.LOGGER.info("[BlastPlaster] NON-LEAF DT BLOCK: type={} pos={} radius={}", partType, pos, radius);
-  }
-
   @Override @NotNull public CompoundTag save(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {
     ListTag tagList = new ListTag();
     for (TickContainer<Collection<BlockStatePosWrapper>> tc : healTask.getQueue()) {
@@ -342,7 +304,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
   }
 
   public void deserializeNBT(CompoundTag tag) {
-    BlastPlaster.LOGGER.info("[BlastPlaster] deserializeNBT called");
     ListTag tagList = tag.getList("healTaskList", Tag.TAG_COMPOUND);
     List<BlockStatePosWrapper> allWrappers = new ArrayList<>();
     for (Tag t : tagList) {
@@ -356,6 +317,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
     if (!allWrappers.isEmpty()) {
+      BlastPlaster.LOGGER.info("[BlastPlaster] Restored {} pending heal blocks from saved data", allWrappers.size());
       for (BlockStatePosWrapper w : allWrappers) {
         BlockState state = w.getState();
         if (state.getBlock() instanceof VineBlock) {
@@ -397,6 +359,4 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     dirtyFlag = false;
     return d || !healTask.isEmpty();
   }
-
-  @Override public Object get() { return this; }
 }
