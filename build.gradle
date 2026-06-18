@@ -2,11 +2,11 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 
 plugins {
+    id 'java'
     id 'idea'
-    id 'maven-publish'
-    id 'net.neoforged.gradle.userdev' version '7.1.37'
-    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.6'
     id 'eclipse'
+    id 'maven-publish'
+    id 'net.neoforged.gradle.userdev' version '7.1.38'
 }
 
 configurations.configureEach {
@@ -29,7 +29,7 @@ println "-> build.gradle applying version: $version (build ${version_buildnumber
 
 group = 'mctmods.blastplaster'
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
 tasks.withType(Jar).configureEach {
     zip64 true
@@ -83,31 +83,33 @@ tasks.register('copyModsTomlForIntelliJ', Copy) {
     dependsOn processResources
 }
 
+tasks.register('genIntellijRunsDummy') {
+    group = 'ide'
+    description = 'Dummy task for IntelliJ compatibility (satisfies genIntellijRunsDummy calls from IDE run configurations)'
+    doLast {
+        println 'genIntellijRunsDummy: dummy task executed successfully for IDE run configuration compatibility.'
+    }
+}
+
 runs {
-    configureEach { run ->
-        println "DEBUG configureEach: name=${run.name}, class=${run.getClass().name}, project.mod_id=${project.mod_id}"
-
-        run.workingDirectory = project.file("run/${run.name}")
-
-        systemProperties = ['forge.logging.markers': '', 'forge.logging.console.level': 'debug']
+    configureEach {
+        systemProperty 'eventbus.api.strictRuntimeChecks', 'true'
+        systemProperty 'neoforge.enabledGameTestNamespaces', "${project.mod_id}"
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
     }
 
     client {
-        println "DEBUG client block: project.mod_id=${project.mod_id}"
-
-        systemProperties = ['neoforge.enabledGameTestNamespaces': project.mod_id as String]
-        arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
     }
 
     server {
-        println "DEBUG server block: project.mod_id=${project.mod_id}"
-
-        systemProperties = ['neoforge.enabledGameTestNamespaces': project.mod_id as String]
-        arguments = ['--nogui']
+        arguments '--nogui'
     }
 }
 
 repositories {
+    mavenCentral()
+
     maven {
         url = 'https://www.cursemaven.com'
         content {
@@ -122,12 +124,11 @@ repositories {
 
 dependencies {
     implementation "net.neoforged:neoforge:${version_neoforge}"
-    implementation "curse.maven:dynamictrees-252818:8227322"
+    implementation "curse.maven:dynamictrees-252818:8228621"
 }
 
-def customGradle = rootProject.file('custom.gradle')
-if (customGradle.exists()) {
-    apply from: customGradle
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }
 
 tasks.register('bumpVersion') {
@@ -163,71 +164,6 @@ tasks.register('sourcesJar', Jar) {
 artifacts {
     archives sourcesJar
 }
-
-void minimizePNGFile(File file) {
-    long size = file.length()
-    ExecOperations execOps = project.services.get(ExecOperations)
-    execOps.exec {
-        executable 'optipng'
-        args '-q', '-o7', '-zm1-9', '-strip', 'all', file.absolutePath
-    }
-    long newSize = file.length()
-    if (newSize < size) {
-        System.out.format("Reduced File size of %s from %d bytes to %d bytes (reduced by %.2f%%)\n",
-                file, size, newSize, ((double) (size - newSize)) / ((double) size) * 100.0)
-    }
-}
-
-tasks.register('optimizePng') {
-    def pngPatterns = ["**/*.png"]
-    doLast {
-        sourceSets.main.resources.srcDirs.each { dir ->
-            fileTree(dir: dir, includes: pngPatterns).each { minimizePNGFile(it) }
-        }
-    }
-}
-
-tasks.register('genIntellijRunsDummy') {}
-
-tasks.register('speedUpPreRun') {
-    doLast {
-        ["Client", "Server"].each { s ->
-            def runConfigFile = file(".idea/runConfigurations/run${s}.xml")
-            if (runConfigFile.exists()) {
-                ant.replace(file: runConfigFile, token: "prepareRun${s}", value: "prepareRuns")
-                def content = runConfigFile.text
-                if (!content.contains('-Dorg.gradle.logging.level=warn')) {
-                    ant.replace(file: runConfigFile,
-                            token: '<option name="VM_PARAMETERS" value="',
-                            value: '<option name="VM_PARAMETERS" value="-Dorg.gradle.logging.level=warn ')
-                }
-            }
-        }
-    }
-}
-
-tasks.withType(Task).configureEach {
-    if (it.name == "genIntellijRuns") {
-        it.finalizedBy speedUpPreRun
-        genIntellijRunsDummy.dependsOn it
-    } else if (it.name == "runServer") {
-        it.standardInput = System.in
-    }
-}
-
-idea {
-    project {
-        settings {
-            taskTriggers {
-                afterSync genIntellijRunsDummy
-            }
-        }
-    }
-}
-
-processResources.dependsOn bumpVersion
-jar.dependsOn bumpVersion
-sourcesJar.dependsOn bumpVersion
 
 jar {
     archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
