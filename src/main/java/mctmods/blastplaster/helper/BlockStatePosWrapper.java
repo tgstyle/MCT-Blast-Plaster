@@ -1,10 +1,14 @@
 package mctmods.blastplaster.helper;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderGetter;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -30,19 +34,25 @@ public class BlockStatePosWrapper {
         return this.pos;
     }
 
-    public CompoundTag getEntityTag() {
-        return this.entityTag;
-    }
-
     public void readNBT(CompoundTag tag, Level level) {
-        this.state = NbtUtils.readBlockState(level.holderLookup(Registries.BLOCK), tag.getCompound("block"));
-        this.pos = NbtUtils.readBlockPos(tag, "pos").orElse(BlockPos.ZERO);
-        if (tag.contains("entity")) { this.entityTag = tag.getCompound("entity"); }
+        HolderGetter<Block> blocks = (level != null)
+                ? level.holderLookup(Registries.BLOCK)
+                : BuiltInRegistries.BLOCK;
+        this.state = tag.getCompound("block")
+                .map(c -> NbtUtils.readBlockState(blocks, c))
+                .orElse(Blocks.AIR.defaultBlockState());
+
+        int[] p = tag.getIntArray("pos").orElse(new int[0]);
+        this.pos = (p.length == 3) ? new BlockPos(p[0], p[1], p[2]) : BlockPos.ZERO;
+
+        if (tag.contains("entity")) {
+            this.entityTag = tag.getCompound("entity").orElse(null);
+        }
     }
 
     public void writeNBT(CompoundTag tag) {
         tag.put("block", NbtUtils.writeBlockState(this.state));
-        tag.put("pos", NbtUtils.writeBlockPos(this.pos));
+        tag.putIntArray("pos", new int[] { this.pos.getX(), this.pos.getY(), this.pos.getZ() });
         if (this.entityTag != null) { tag.put("entity", this.entityTag); }
     }
 }

@@ -11,8 +11,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.TickTask;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.DamageTypeTags;
@@ -26,7 +27,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.WitherSkull;
+import net.minecraft.world.entity.projectile.hurtingprojectile.WitherSkull;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.Level;
@@ -69,7 +70,7 @@ public class ExplosionEventHandler {
   private static final Map<BlockPos, Long> lastProcessedPositions = new HashMap<>();
 
   @SubscribeEvent public void onDetonate(ExplosionEvent.Detonate event) {
-    if (event.getLevel().isClientSide) { return; }
+    if (event.getLevel().isClientSide()) { return; }
 
     Explosion explosion = event.getExplosion();
     Entity exploder = explosion.getDirectSourceEntity();
@@ -93,13 +94,11 @@ public class ExplosionEventHandler {
         boolean isPrimedTnt = exploder instanceof PrimedTnt;
         boolean isCustomEntity = false;
         for (String idStr : Config.getCustomEntitiesToHeal()) {
-          ResourceLocation id = ResourceLocation.tryParse(idStr);
-          if (id != null) {
-            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(id).orElse(null);
-            if (type != null && ((exploder != null && exploder.getType() == type) || (indirect != null && indirect.getType() == type))) {
-              isCustomEntity = true;
-              break;
-            }
+          Identifier identifier = Identifier.tryParse(idStr);
+          if (identifier != null) {
+            ResourceKey<EntityType<?>> key = ResourceKey.create(Registries.ENTITY_TYPE, identifier);
+            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(key).orElse(null);
+            if (type != null && ((exploder != null && exploder.getType() == type) || (indirect != null && indirect.getType() == type))) { isCustomEntity = true; break; }
           }
         }
         if (nonPlayerCaused && (isPrimedTnt || isCustomEntity)) { processThis = true; }
@@ -150,8 +149,6 @@ public class ExplosionEventHandler {
       if (Config.enableDropSuppression()) {
         BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos);
       }
-
-      explosion.getToBlow().removeAll(affectedPos);
 
       List<BlockStatePosWrapper> fullToProcessForDestroy = new ArrayList<>(toProcess);
 
@@ -240,15 +237,14 @@ public class ExplosionEventHandler {
       }
 
       if (!pendingRealDrops.isEmpty()) {
-        int nextTick = serverLevel.getServer().getTickCount() + 2;
-        serverLevel.getServer().tell(new TickTask(nextTick, () -> {
+        serverLevel.getServer().execute(() -> {
           for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
             ItemEntity item = new ItemEntity(serverLevel, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
             item.getPersistentData().putBoolean("BlastPlasterControlledDrop", true);
             if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, serverLevel); } else { BlastPlasterUtil.applyTossVelocity(item, serverLevel); }
             serverLevel.addFreshEntity(item);
           }
-        }));
+        });
       }
 
       if (Config.enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
@@ -634,7 +630,10 @@ public class ExplosionEventHandler {
 
   private boolean isHollowStructure(Set<BlockPos> allLogs) {
     Map<Integer, List<BlockPos>> logsByY = new HashMap<>();
-    for (BlockPos p : allLogs) logsByY.computeIfAbsent(p.getY(), k -> new ArrayList<>()).add(p);
+    for (BlockPos p : allLogs) {
+      logsByY.putIfAbsent(p.getY(), new ArrayList<>());
+      logsByY.get(p.getY()).add(p);
+    }
     for (List<BlockPos> slice : logsByY.values()) {
       if (slice.size() < 9) continue;
       if (countMaxHorizontalCluster(slice) >= 7) return true;
@@ -700,7 +699,7 @@ public class ExplosionEventHandler {
   }
 
   @SubscribeEvent public void onItemEntityJoin(EntityJoinLevelEvent event) {
-    if (event.getLevel().isClientSide) { return; }
+    if (event.getLevel().isClientSide()) { return; }
     if (!(event.getEntity() instanceof ItemEntity item)) { return; }
     if (BlastPlasterUtil.shouldSuppressItemDrop(item)) {
       event.setCanceled(true);
@@ -719,13 +718,11 @@ public class ExplosionEventHandler {
     int particleCount = Config.getExplosionSmokeParticleCount();
     int burstInterval = 15;
     int numBursts = Math.max(1, duration / burstInterval);
-    int baseTick = level.getServer().getTickCount();
 
     for (int i = 0; i < numBursts; i++) {
-      final int delay = i * burstInterval;
-      final int smokeCount = (i == 0) ? particleCount * 2 : particleCount;
+      final int smokeCount = (i == 0) ? Math.max(5, particleCount / 2) : Math.max(2, particleCount / 4);
       final double yOffset = 0.25 + (i * 0.06);
-      level.getServer().tell(new TickTask(baseTick + delay, () -> level.sendParticles(ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, center.x, center.y + yOffset, center.z, smokeCount, 1.2, 0.7, 1.2, 0.04)));
+      level.getServer().execute(() -> level.sendParticles(ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, false, true, center.x, center.y + yOffset, center.z, smokeCount, 1.2, 0.7, 1.2, 0.04));
     }
   }
 
@@ -734,24 +731,12 @@ public class ExplosionEventHandler {
     if (currentTick - lastFlashTick < 2) { return; }
     lastFlashTick = currentTick;
 
-    int flashCount = Config.getExplosionFlashParticleCount();
-    int pulses = Config.getExplosionFlashPulses();
-    int baseTick = level.getServer().getTickCount();
+    int pulses = Math.min(3, Config.getExplosionFlashPulses());
+    int particleCount = Config.getExplosionFlashParticleCount();
 
     for (int i = 0; i < pulses; i++) {
-      final int delay = i * 3;
-      final int count = (int) (flashCount * (1.0 - 0.25 * i));
-      final double spread = 0.6 + i * 0.4;
-      final double yBase = center.y + 0.5 + (i * 0.15);
-      final int pulseIndex = i;
-
-      level.getServer().tell(new TickTask(baseTick + delay, () -> {
-        level.sendParticles(ParticleTypes.FLASH, center.x, yBase, center.z, count, spread, spread, spread, 0.0);
-        if (pulseIndex == 0) {
-          level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 6, 0.0, 0.0, 0.0, 0.0);
-          level.sendParticles(ParticleTypes.EXPLOSION, center.x, center.y + 0.3, center.z, 45, 0.0, 1.0, 1.0, 0.0);
-        } else { level.sendParticles(ParticleTypes.EXPLOSION, center.x, center.y + 0.3, center.z, 25, 0.6, 0.6, 0.6, 0.0); }
-      }));
+      final int count = Math.max(1, particleCount / 120);
+      level.getServer().execute(() -> level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y + 0.5, center.z, count, 0.0, 0.0, 0.0, 0.0));
     }
   }
 
@@ -770,12 +755,11 @@ public class ExplosionEventHandler {
         }
       }
       for (BlockPos p : lightPositions) { level.setBlock(p, lightState, 3); }
-      int currentTick = level.getServer().getTickCount();
-      level.getServer().tell(new TickTask(currentTick + duration, () -> {
+      level.getServer().execute(() -> {
         for (BlockPos p : lightPositions) {
           if (level.getBlockState(p).is(Blocks.LIGHT)) { level.setBlock(p, Blocks.AIR.defaultBlockState(), 3); }
         }
-      }));
+      });
     }
   }
 }

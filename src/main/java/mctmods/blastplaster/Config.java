@@ -1,8 +1,9 @@
 package mctmods.blastplaster;
 
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -179,7 +180,7 @@ public class Config {
                             "dynamictrees:bamboo=bamboo",
                             "dynamictrees:azalea=oak_log"
                     ),
-                    () -> "dynamictrees:oak=oak_log", s -> s instanceof String);
+                    () -> "dynamictrees:oak_log", s -> s instanceof String);
     ENABLE_DROP_SUPPRESSION = builder.comment("Prevents ANY stray ItemEntities (seeds, sticks, bamboo, vines, etc.) from ever spawning in HEAL or VISUAL_TOSS modes by cancelling them the instant they try to join the world. This is the core safety system for non-EJECT modes (no late scavenging anymore). Default true.")
             .define("EnableDropSuppression", true);
     builder.pop();
@@ -261,16 +262,17 @@ public class Config {
   private static void buildMaps() {
     TREE_MAP.clear();
 
-    BuiltInRegistries.BLOCK.stream().forEach(leafBlock -> {
-      ResourceLocation loc = BuiltInRegistries.BLOCK.getKey(leafBlock);
+    Registry<Block> blockRegistry = BuiltInRegistries.BLOCK;
+    blockRegistry.stream().forEach(leafBlock -> {
+      Identifier loc = blockRegistry.getKey(leafBlock);
       if (loc.getPath().endsWith("_leaves")) {
         String path = loc.getPath();
         String prefix = path.substring(0, path.length() - "_leaves".length());
         String logPath = prefix + "_logs";
-        ResourceLocation logLoc = ResourceLocation.fromNamespaceAndPath(loc.getNamespace(), logPath);
+        Identifier logLoc = Identifier.fromNamespaceAndPath(loc.getNamespace(), logPath);
         TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
 
-        if (BuiltInRegistries.BLOCK.getTag(logTag).map(holders -> holders.size() > 0).orElse(false)) {
+        if (blockRegistry.getTagOrEmpty(logTag).iterator().hasNext()) {
           TREE_MAP.put(logTag, leafBlock);
         }
       }
@@ -279,12 +281,12 @@ public class Config {
     for (String pair : TREE_LOG_LEAF_PAIRS.get()) {
       String[] parts = pair.split("=");
       if (parts.length == 2) {
-        ResourceLocation logLoc = ResourceLocation.tryParse(parts[0].trim());
-        ResourceLocation leafLoc = ResourceLocation.tryParse(parts[1].trim());
+        Identifier logLoc = Identifier.tryParse(parts[0].trim());
+        Identifier leafLoc = Identifier.tryParse(parts[1].trim());
         if (logLoc != null && leafLoc != null) {
           TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
           Block leafBlock = BuiltInRegistries.BLOCK.getOptional(leafLoc).orElse(null);
-          if (leafBlock != null && BuiltInRegistries.BLOCK.getTag(logTag).map(holders -> holders.size() > 0).orElse(false)) {
+          if (leafBlock != null && blockRegistry.getTagOrEmpty(logTag).iterator().hasNext()) {
             TREE_MAP.put(logTag, leafBlock);
           }
         }
@@ -298,7 +300,7 @@ public class Config {
       String[] parts = entry.split("=");
       if (parts.length == 2) {
         String dtKey = parts[0].trim().toLowerCase();
-        ResourceLocation logLoc = ResourceLocation.tryParse(parts[1].trim());
+        Identifier logLoc = Identifier.tryParse(parts[1].trim());
         if (logLoc != null) {
           BuiltInRegistries.BLOCK.getOptional(logLoc).ifPresent(logBlock -> DT_LOG_MAP.put(dtKey, logBlock));
         }

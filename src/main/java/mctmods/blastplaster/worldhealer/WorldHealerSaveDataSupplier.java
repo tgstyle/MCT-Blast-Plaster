@@ -10,8 +10,6 @@ import mctmods.blastplaster.util.BlastPlasterUtil;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -30,11 +28,13 @@ import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.storage.SavedDataStorage;
+
+import net.minecraft.resources.Identifier;
+import com.mojang.serialization.Codec;
 
 import net.neoforged.fml.ModList;
-
-import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -47,14 +47,52 @@ import com.dtteam.dynamictrees.tree.TreeHelper;
 import com.dtteam.dynamictrees.block.soil.SoilBlock;
 import com.dtteam.dynamictrees.block.soil.SpeciesBlockEntity;
 import com.dtteam.dynamictrees.tree.species.Species;
-import com.dtteam.dynamictrees.block.branch.BasicRootsBlock;
 
-public class WorldHealerSaveDataSupplier extends SavedData implements java.util.function.Supplier<Object> {
+public class WorldHealerSaveDataSupplier extends SavedData {
+
+  public static final String DATAKEY = "world_healer";
+  public static final Identifier ID = Identifier.fromNamespaceAndPath("blastplaster", DATAKEY);
+
+  public static final Codec<WorldHealerSaveDataSupplier> CODEC = CompoundTag.CODEC.xmap(
+          tag -> {
+            WorldHealerSaveDataSupplier data = new WorldHealerSaveDataSupplier();
+            data.deserializeNBT(tag);
+            return data;
+          },
+          data -> {
+            CompoundTag tag = new CompoundTag();
+            ListTag tagList = new ListTag();
+            for (TickContainer<Collection<BlockStatePosWrapper>> tc : data.healTask.getQueue()) {
+              CompoundTag tcTag = new CompoundTag();
+              tcTag.putInt("ticks", tc.getTicks());
+              ListTag bdList = new ListTag();
+              for (BlockStatePosWrapper bd : tc.getValue()) {
+                CompoundTag bdTag = new CompoundTag();
+                bd.writeNBT(bdTag);
+                bdList.add(bdTag);
+              }
+              tcTag.put("blockDataList", bdList);
+              tagList.add(tcTag);
+            }
+            tag.put("healTaskList", tagList);
+            return tag;
+          }
+  );
+
+  public static final SavedDataType<WorldHealerSaveDataSupplier> TYPE = new SavedDataType<>(
+          ID,
+          lvl -> {
+            WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
+            w.level = lvl;
+            return w;
+          },
+          ignored -> CODEC,
+          null
+  );
 
   private Level level;
   private final MultiPhaseTickingHealList healTask = new MultiPhaseTickingHealList();
   private boolean dirtyFlag = false;
-  static final String DATAKEY = BlastPlaster.MODID;
 
   public WorldHealerSaveDataSupplier() {}
 
@@ -62,7 +100,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (healTask.isEmpty()) { return; }
     Collection<BlockStatePosWrapper> blocksToHeal = healTask.processTick();
     if (blocksToHeal != null && !blocksToHeal.isEmpty()) {
-      BlastPlaster.LOGGER.info("[BlastPlaster] onTick processing {} blocks this tick", blocksToHeal.size());
       for (BlockStatePosWrapper blockData : blocksToHeal) { heal(blockData); }
       dirtyFlag = true;
     }
@@ -82,8 +119,6 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
         }
       }
     }
-
-    BlastPlaster.LOGGER.info("[BlastPlaster] DT PARTS collected: {}", dtParts.size());
 
     if (!dtParts.isEmpty() && ModList.get().isLoaded("dynamictrees")) {
       dtParts.sort(Comparator.comparingInt((BlockStatePosWrapper w) -> w.getPos().getY()).reversed());
@@ -111,12 +146,10 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
 
-    BlastPlaster.LOGGER.info("[BlastPlaster] GROUND collected: {}, FLORA: {}, VINES: {}, BAMBOO_CANE: {}", ground.size(), flora.size(), vines.size(), bambooCane.size());
-
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : ground) {
       int y = wrapper.getPos().getY();
-      layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
+      layers.computeIfAbsent(y, ignored -> new ArrayList<>()).add(wrapper);
     }
 
     int var = Config.getRandomTickVar();
@@ -127,7 +160,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
         currentDelay += 20;
       } else {
         for (BlockStatePosWrapper wrapper : layer) {
-          int delay = layerDelay + level.random.nextInt(var);
+          int delay = layerDelay + level.getRandom().nextInt(var);
           healTask.enqueue(HealPhase.GROUND, delay, wrapper);
         }
         currentDelay += var;
@@ -195,12 +228,12 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
         }
       }
 
-      if ((state.is(BlockTags.TALL_FLOWERS) || block instanceof DoublePlantBlock) && state.hasProperty(DoublePlantBlock.HALF)) {
+      if (block instanceof DoublePlantBlock && state.hasProperty(DoublePlantBlock.HALF)) {
         DoubleBlockHalf half = state.getValue(DoublePlantBlock.HALF);
         BlockPos otherPos = (half == DoubleBlockHalf.LOWER) ? pos.above() : pos.below();
         if (!affectedPos.contains(otherPos)) {
           BlockState otherState = level.getBlockState(otherPos);
-          if (otherState.is(BlockTags.TALL_FLOWERS)) { extras.add(new BlockStatePosWrapper(level, otherPos, otherState)); }
+          if (otherState.getBlock() instanceof DoublePlantBlock) { extras.add(new BlockStatePosWrapper(level, otherPos, otherState)); }
         }
       }
 
@@ -240,32 +273,15 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     BlockPos pos = blockData.getPos();
     BlockState restoreState = blockData.getState();
 
-    BlastPlaster.LOGGER.info("[BlastPlaster] heal() called for block={} at {}", restoreState.getBlock(), pos);
-
-    if (ModList.get().isLoaded("dynamictrees")) {
-      logNonLeafDTBlocks(blockData);
-    }
-
     Block block = restoreState.getBlock();
     if (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE) {
       level.setBlock(pos, restoreState, 3);
-      if (blockData.getEntityTag() != null) {
-        BlockEntity te = level.getBlockEntity(pos);
-        if (te != null) { te.loadCustomOnly(blockData.getEntityTag(), level.registryAccess()); }
-      }
       return;
     }
 
     if (ModList.get().isLoaded("dynamictrees") && TreeHelper.getTreePart(restoreState) != TreeHelper.NULL_TREE_PART) {
       level.setBlock(pos, restoreState, 3);
       level.updateNeighborsAt(pos, restoreState.getBlock());
-
-      BlastPlaster.LOGGER.info("[BlastPlaster] DT block healed at {}", pos);
-
-      if (blockData.getEntityTag() != null) {
-        BlockEntity te = level.getBlockEntity(pos);
-        if (te != null) { te.loadCustomOnly(blockData.getEntityTag(), level.registryAccess()); }
-      }
 
       if (restoreState.getBlock() instanceof SoilBlock soil) {
         BlockPos trunkPos = pos.relative(soil.getTrunkDirection(level, pos));
@@ -293,69 +309,24 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
     if (Config.isOverride() || isEmpty || hasFluid) {
       level.setBlock(pos, restoreState, 3);
-      if (blockData.getEntityTag() != null) {
-        BlockEntity te = level.getBlockEntity(pos);
-        if (te != null) { te.loadCustomOnly(blockData.getEntityTag(), level.registryAccess()); }
-      }
     }
-  }
-
-  private void logNonLeafDTBlocks(BlockStatePosWrapper blockData) {
-    BlockState state = blockData.getState();
-    BlockPos pos = blockData.getPos();
-    if (!ModList.get().isLoaded("dynamictrees")) { return; }
-    if (TreeHelper.getTreePart(state) == TreeHelper.NULL_TREE_PART) { return; }
-    if (TreeHelper.isLeaves(state)) { return; }
-
-    String partType = "UNKNOWN_DT_PART";
-    String blockKey = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().toLowerCase();
-    String descId = state.getBlock().getDescriptionId().toLowerCase();
-
-    if (state.getBlock() instanceof BasicRootsBlock || blockKey.contains("root") || descId.contains("root") || TreeHelper.isRooty(state)) {
-      partType = "ROOT_BLOCK";
-    } else if (TreeHelper.isBranch(state)) {
-      partType = "BRANCH";
-    } else if (TreeHelper.isRooty(state)) {
-      partType = "ROOTY";
-    }
-
-    int radius = BlastPlasterUtil.getDTRadius(state);
-    BlastPlaster.LOGGER.info("[BlastPlaster] NON-LEAF DT BLOCK: type={} pos={} radius={}", partType, pos, radius);
-  }
-
-  @Override @NotNull public CompoundTag save(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {
-    ListTag tagList = new ListTag();
-    for (TickContainer<Collection<BlockStatePosWrapper>> tc : healTask.getQueue()) {
-      CompoundTag tcTag = new CompoundTag();
-      tcTag.putInt("ticks", tc.getTicks());
-      ListTag bdList = new ListTag();
-      for (BlockStatePosWrapper bd : tc.getValue()) {
-        CompoundTag bdTag = new CompoundTag();
-        bd.writeNBT(bdTag);
-        bdList.add(bdTag);
-      }
-      tcTag.put("blockDataList", bdList);
-      tagList.add(tcTag);
-    }
-    tag.put("healTaskList", tagList);
-    return tag;
   }
 
   public void deserializeNBT(CompoundTag tag) {
-    BlastPlaster.LOGGER.info("[BlastPlaster] deserializeNBT called");
-    ListTag tagList = tag.getList("healTaskList", Tag.TAG_COMPOUND);
+    ListTag tagList = tag.getList("healTaskList").orElseGet(ListTag::new);
     List<BlockStatePosWrapper> allWrappers = new ArrayList<>();
     for (Tag t : tagList) {
-      CompoundTag tcTag = (CompoundTag) t;
-      ListTag bdListTag = tcTag.getList("blockDataList", Tag.TAG_COMPOUND);
+      if (!(t instanceof CompoundTag tcTag)) { continue; }
+      ListTag bdListTag = tcTag.getList("blockDataList").orElseGet(ListTag::new);
       for (Tag bt : bdListTag) {
-        CompoundTag bdTag = (CompoundTag) bt;
+        if (!(bt instanceof CompoundTag bdTag)) { continue; }
         BlockStatePosWrapper bd = new BlockStatePosWrapper();
         bd.readNBT(bdTag, level);
         allWrappers.add(bd);
       }
     }
     if (!allWrappers.isEmpty()) {
+      BlastPlaster.LOGGER.info("[BlastPlaster] Restored {} pending heal blocks from saved data", allWrappers.size());
       for (BlockStatePosWrapper w : allWrappers) {
         BlockState state = w.getState();
         if (state.getBlock() instanceof VineBlock) {
@@ -373,23 +344,12 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
   }
 
   public static WorldHealerSaveDataSupplier loadWorldHealer(ServerLevel serverLevelIn) {
-    DimensionDataStorage storage = serverLevelIn.getDataStorage();
-    return storage.computeIfAbsent(
-            new SavedData.Factory<>(
-                    () -> {
-                      WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
-                      w.level = serverLevelIn;
-                      return w;
-                    },
-                    (tag, registries) -> {
-                      WorldHealerSaveDataSupplier w = new WorldHealerSaveDataSupplier();
-                      w.level = serverLevelIn;
-                      w.deserializeNBT(tag);
-                      return w;
-                    }
-            ),
-            DATAKEY
-    );
+    SavedDataStorage storage = serverLevelIn.getDataStorage();
+    WorldHealerSaveDataSupplier data = storage.computeIfAbsent(TYPE);
+    if (data.level == null) {
+      data.level = serverLevelIn;
+    }
+    return data;
   }
 
   @Override public boolean isDirty() {
@@ -397,6 +357,4 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     dirtyFlag = false;
     return d || !healTask.isEmpty();
   }
-
-  @Override public Object get() { return this; }
 }

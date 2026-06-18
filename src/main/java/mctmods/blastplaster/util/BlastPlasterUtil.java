@@ -6,7 +6,7 @@ import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -87,7 +87,7 @@ public class BlastPlasterUtil {
         Level rawLevel = item.level();
         if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
 
-        if (item.getPersistentData().getBoolean("BlastPlasterControlledDrop")) { return false; }
+        if (item.getPersistentData().getBoolean("BlastPlasterControlledDrop").orElse(false)) { return false; }
 
         long now = serverLevel.getGameTime();
         recentExplosions.removeIf(area -> area.expireTick < now);
@@ -149,7 +149,7 @@ public class BlastPlasterUtil {
         if (TreeHelper.getTreePart(state) != TreeHelper.NULL_TREE_PART) {
             return true;
         }
-        ResourceLocation key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        Identifier key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         return "dynamictrees".equals(key.getNamespace());
     }
 
@@ -170,14 +170,14 @@ public class BlastPlasterUtil {
         List<ItemStack> drops = new ArrayList<>();
 
         int numLogs = 0;
-        if (radius >= 8) { numLogs = 1 + level.random.nextInt(2); }
+        if (radius >= 8) { numLogs = 1 + level.getRandom().nextInt(2); }
         else if (radius >= 6) { numLogs = 1; }
-        else if (radius >= 4) { numLogs = level.random.nextBoolean() ? 1 : 0; }
+        else if (radius >= 4) { numLogs = level.getRandom().nextBoolean() ? 1 : 0; }
 
         int numSticks = 0;
-        if (TreeHelper.isLeaves(state)) { numSticks = level.random.nextFloat() < 0.05f ? 1 : 0; }
+        if (TreeHelper.isLeaves(state)) { numSticks = level.getRandom().nextFloat() < 0.05f ? 1 : 0; }
 
-        ResourceLocation key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        Identifier key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         String path = key.toString();
         Block logBlock = Config.getDTLogForPath(path);
         ItemStack logStack = new ItemStack(logBlock);
@@ -214,23 +214,23 @@ public class BlastPlasterUtil {
     }
 
     public static void applyTossVelocity(ItemEntity entity, ServerLevel level) {
-        double dx = level.random.nextDouble() - 0.5;
-        double dy = level.random.nextDouble() * 0.55 + 0.35;
-        double dz = level.random.nextDouble() - 0.5;
+        double dx = level.getRandom().nextDouble() - 0.5;
+        double dy = level.getRandom().nextDouble() * 0.55 + 0.35;
+        double dz = level.getRandom().nextDouble() - 0.5;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0) {
-            double strength = 0.42 + level.random.nextDouble() * 0.58;
+            double strength = 0.42 + level.getRandom().nextDouble() * 0.58;
             entity.setDeltaMovement(dx / len * strength, dy / len * strength, dz / len * strength);
         }
     }
 
     public static void applyGentleTossVelocity(ItemEntity entity, ServerLevel level) {
-        double dx = level.random.nextDouble() - 0.5;
-        double dy = level.random.nextDouble() * 0.3 + 0.25;
-        double dz = level.random.nextDouble() - 0.5;
+        double dx = level.getRandom().nextDouble() - 0.5;
+        double dy = level.getRandom().nextDouble() * 0.3 + 0.25;
+        double dz = level.getRandom().nextDouble() - 0.5;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0) {
-            double strength = 0.18 + level.random.nextDouble() * 0.22;
+            double strength = 0.18 + level.getRandom().nextDouble() * 0.22;
             entity.setDeltaMovement(dx / len * strength, dy / len * strength, dz / len * strength);
         }
     }
@@ -242,16 +242,16 @@ public class BlastPlasterUtil {
 
     public static void finalizeExplodedBlock(ServerLevel level, BlockPos pos, BlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
         if (effectiveMode == Config.ExplosionMode.VISUAL_TOSS) {
-            if (Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (Config.enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         } else if (effectiveMode == Config.ExplosionMode.HEAL) {
-            if (Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (Config.enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         } else if (effectiveMode == Config.ExplosionMode.EJECT_DROPS) {
-            if (!realDropOccurred && Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (!realDropOccurred && Config.enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         }
         clearExplodedBlock(level, pos);
     }
 
-    public static boolean calculateRealDrop(ServerLevel level) { return level.random.nextFloat() < (Config.enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
+    public static boolean calculateRealDrop(ServerLevel level) { return level.getRandom().nextFloat() < (Config.enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
 
     public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();

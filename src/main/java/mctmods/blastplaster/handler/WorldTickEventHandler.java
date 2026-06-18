@@ -16,7 +16,7 @@ public class WorldTickEventHandler {
   }
 
   @SubscribeEvent public void onWorldTick(LevelTickEvent.Pre event) {
-    if (event.getLevel().isClientSide) { return; }
+    if (event.getLevel().isClientSide()) { return; }
     WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer((ServerLevel) event.getLevel());
     if (worldHealer != null) {
       worldHealer.onTick();
