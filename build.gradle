@@ -40,10 +40,18 @@ ext {
     version_minecraft = versionProps['version_mc']
     version_neoforge = versionProps['version_neoforge']
     version_parchment = versionProps['version_parchment']
+    version_dynamictrees_curse = versionProps['version_dynamictrees_curse']
     mod_license = gradleProps['mod_license']
     mod_name = gradleProps['mod_name']
     mod_authors = gradleProps['mod_authors']
     mod_description = gradleProps['mod_description']
+}
+
+subsystems {
+    parchment {
+        minecraftVersion = version_minecraft
+        mappingsVersion = version_parchment
+    }
 }
 
 def version_replaces = {
@@ -89,21 +97,23 @@ runs {
 
         run.workingDirectory = project.file("run/${run.name}")
 
-        systemProperties = ['forge.logging.markers': '', 'forge.logging.console.level': 'debug']
+        systemProperty 'forge.logging.markers', ''
+        systemProperty 'forge.logging.console.level', 'debug'
+        modSource project.sourceSets.main
     }
 
     client {
         println "DEBUG client block: project.mod_id=${project.mod_id}"
 
-        systemProperties = ['neoforge.enabledGameTestNamespaces': project.mod_id as String]
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
         arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
     }
 
     server {
         println "DEBUG server block: project.mod_id=${project.mod_id}"
 
-        systemProperties = ['neoforge.enabledGameTestNamespaces': project.mod_id as String]
-        arguments = ['--nogui']
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
+        argument '--nogui'
     }
 }
 
@@ -122,7 +132,7 @@ repositories {
 
 dependencies {
     implementation "net.neoforged:neoforge:${version_neoforge}"
-    implementation "curse.maven:dynamictrees-252818:8227322"
+    implementation "curse.maven:${version_dynamictrees_curse}"
 }
 
 def customGradle = rootProject.file('custom.gradle')
