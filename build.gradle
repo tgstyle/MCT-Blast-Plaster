@@ -41,6 +41,7 @@ ext {
     mod_id = gradleProps['mod_id']
     version_minecraft = versionProps['version_mc']
     version_forge = versionProps['version_forge']
+    version_dynamictrees_curse = versionProps['version_dynamictrees_curse']
     version_parchment = versionProps['version_parchment']
     mod_license = gradleProps['mod_license']
     mod_name = gradleProps['mod_name']
@@ -133,7 +134,7 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${version_minecraft}-${version_forge}"
 
-    implementation fg.deobf("curse.maven:dynamictrees-252818:7340373")
+    implementation fg.deobf("curse.maven:${version_dynamictrees_curse}")
 }
 
 def customGradle = rootProject.file('custom.gradle')
