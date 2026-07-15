@@ -15,7 +15,7 @@ credits="Thanks to EyZox, Lothrazar for inspiration from CreeperHeal"
 [[dependencies.blastplaster]]
 modId="neoforge"
 type="required"
-versionRange="[21.1,)"
+versionRange="[${version_neoforge_min},)"
 ordering="NONE"
 side="BOTH"
 
