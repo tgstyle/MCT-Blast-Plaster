@@ -1,7 +1,6 @@
 {
     "pack": {
-        "description": "BlastPlaster resources",
-        "pack_format": 101,
-        "supported_formats": [101, 101]
+        "description": {"text": "${mod_id} resources"},
+        "pack_format": 101
     }
 }
