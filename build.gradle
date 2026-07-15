@@ -43,6 +43,7 @@ ext {
     mod_id = gradleProps['mod_id']
     version_minecraft = versionProps['version_mc']
     version_neoforge = versionProps['version_neoforge']
+    version_neoforge_min = versionProps['version_neoforge_min']
     version_dynamictrees_curse = versionProps['version_dynamictrees_curse']
     mod_license = gradleProps['mod_license']
     mod_name = gradleProps['mod_name']
@@ -56,6 +57,7 @@ def version_replaces = {
             'build_number'   : project.ext.get('version_buildnumber') ?: version_buildnumber,
             'version_mc'     : version_minecraft,
             'version_neoforge' : version_neoforge,
+            'version_neoforge_min' : version_neoforge_min,
             'mod_license'    : mod_license,
             'mod_name'       : mod_name,
             'mod_authors'    : mod_authors,
@@ -90,14 +92,14 @@ tasks.register('copyModsTomlForIntelliJ', Copy) {
 runs {
     configureEach { run ->
         run.workingDirectory = project.file("run/${run.name}")
+
         systemProperty 'forge.logging.markers', ''
         systemProperty 'forge.logging.console.level', 'debug'
         modSource project.sourceSets.main
     }
 
     client {
-        systemProperties = ['neoforge.enabledGameTestNamespaces': project.mod_id as String]
-        //environmentVariables 'XDG_SESSION_TYPE': 'x11', 'DISPLAY': ':0'
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
         arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
     }
 
