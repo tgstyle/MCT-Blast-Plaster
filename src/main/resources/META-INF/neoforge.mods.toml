@@ -25,3 +25,10 @@ type="required"
 versionRange="[${version_mc}]"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.blastplaster]]
+modId="dynamictrees"
+mandatory=false
+versionRange="[${version_dynamictrees_min},)"
+ordering="AFTER"
+side="BOTH"

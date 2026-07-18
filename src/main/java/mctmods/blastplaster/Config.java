@@ -7,7 +7,6 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
-import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 import java.util.Arrays;
@@ -28,6 +27,7 @@ public class Config {
 
   private static final ModConfigSpec.EnumValue<ExplosionMode> EXPLOSION_MODE;
   private static final ModConfigSpec.BooleanValue ENABLE_FAKE_TOSSED_BLOCKS;
+  private static final ModConfigSpec.BooleanValue DEBUG_LOGGING;
   private static final ModConfigSpec.BooleanValue ENABLE_EXPLOSION_FLASH;
   private static final ModConfigSpec.IntValue EXPLOSION_FLASH_DURATION;
   private static final ModConfigSpec.IntValue EXPLOSION_FLASH_LIGHT_LEVEL;
@@ -51,7 +51,6 @@ public class Config {
   private static final ModConfigSpec.BooleanValue PROCESS_PLAYER_IGNITED_TNT;
   private static final ModConfigSpec.ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
 
-  private static final ModConfigSpec.BooleanValue ENABLE_ALEXSCAVES_NUKES;
 
   private static final ModConfigSpec.BooleanValue DT_SPECIAL_DROPS;
   private static final ModConfigSpec.ConfigValue<List<? extends String>> DT_LOG_MAPPINGS;
@@ -151,8 +150,6 @@ public class Config {
             "  ALEX'S CAVES COMPAT",
             "================================================================");
     builder.push("compatibility");
-    ENABLE_ALEXSCAVES_NUKES = builder.comment("If true and Alex's Caves is loaded, nucleeeper explosions are processed according to selected mode (treated as non-player TNT).")
-            .define("EnableAlexsCavesNukes", true);
     builder.pop();
 
     builder.comment(
@@ -207,6 +204,9 @@ public class Config {
             .defineInRange("MaxTreeSize", 20000, 0, 50000);
     builder.pop();
 
+    DEBUG_LOGGING = builder.comment("If true, BlastPlaster prints detailed heal scheduling and batch telemetry to the log.")
+            .define("EnableDebugLogging", false);
+
     SPEC = builder.build();
   }
 
@@ -219,7 +219,6 @@ public class Config {
 
   private static void validateConfig() {
     if (playerTNTAlwaysDrops() && !processPlayerIgnitedTNT()) { BlastPlaster.LOGGER.warn("[BlastPlaster] Config: PlayerTNTAlwaysDrops=true but ProcessPlayerIgnitedTNT=false - player TNT explosions will be ignored."); }
-    if (!isAlexsCavesNukesEnabled() && ModList.get().isLoaded("alexscaves")) { BlastPlaster.LOGGER.info("[BlastPlaster] Alex's Caves loaded but EnableAlexsCavesNukes=false (nukes will be ignored)."); }
   }
 
   public static ExplosionMode getExplosionMode() { return EXPLOSION_MODE.get(); }
@@ -243,7 +242,7 @@ public class Config {
   @SuppressWarnings("unchecked")
   public static List<String> getCustomEntitiesToHeal() { return (List<String>) CUSTOM_ENTITIES_TO_HEAL.get(); }
 
-  public static boolean isAlexsCavesNukesEnabled() { return ENABLE_ALEXSCAVES_NUKES.get() && ModList.get().isLoaded("alexscaves"); }
+  public static boolean debugLogging() { return DEBUG_LOGGING.get(); }
   public static int getMinimumTicksBeforeHeal() { return MIN_TICKS_BEFORE_HEAL.get(); }
   public static int getRandomTickVar() { return RANDOM_TICK_VAR.get(); }
   public static boolean isOverride() { return OVERRIDE_BLOCKS.get(); }
