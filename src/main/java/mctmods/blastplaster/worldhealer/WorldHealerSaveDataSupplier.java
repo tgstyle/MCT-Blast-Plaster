@@ -77,9 +77,9 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (healTask.getQueue().isEmpty()) { return; }
     Collection<BlockStatePosWrapper> blocksToHeal = healTask.processTick();
     if (blocksToHeal != null) {
-      if (BlastPlaster.LOGGER.isDebugEnabled() && !blocksToHeal.isEmpty()) {
+      if (Config.debugLogging() && !blocksToHeal.isEmpty()) {
         BlockStatePosWrapper first = blocksToHeal.iterator().next();
-        BlastPlaster.LOGGER.debug("Heal batch released: {} blocks at gameTime {} (first: {} at {})", blocksToHeal.size(), level.getGameTime(), first.getState().getBlock().getClass().getSimpleName(), first.getPos());
+        BlastPlaster.LOGGER.info("Heal batch released: {} blocks at gameTime {} (first: {} at {})", blocksToHeal.size(), level.getGameTime(), first.getState().getBlock().getClass().getSimpleName(), first.getPos());
       }
       for (BlockStatePosWrapper blockData : blocksToHeal) { heal(blockData); }
       dirtyFlag = true;
@@ -192,7 +192,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     for (BlockStatePosWrapper item : dtFruitPods) { healTask.enqueue(fruitTick, item); }
 
     if (!woodBatch.isEmpty() || !leafBatch.isEmpty() || !dtPriority.isEmpty()) {
-      BlastPlaster.LOGGER.debug("Heal timeline: ground ends {}, {} rooty pairs at {}, {} wood at {}, {} surface roots at {}, {} leaves at {}, {} fruit/pods at {}", groundEnd, dtPriority.size(), pairBase, woodBatch.size(), woodTick, dtSurfaceRoots.size(), woodTick + 4, leafBatch.size(), leavesTick, dtFruitPods.size(), fruitTick);
+      BlastPlaster.debug("Heal timeline: ground ends {}, {} rooty pairs at {}, {} wood at {}, {} surface roots at {}, {} leaves at {}, {} fruit/pods at {}", groundEnd, dtPriority.size(), pairBase, woodBatch.size(), woodTick, dtSurfaceRoots.size(), woodTick + 4, leafBatch.size(), leavesTick, dtFruitPods.size(), fruitTick);
     }
 
     if (!vines.isEmpty()) {
@@ -411,7 +411,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
           int totalBlocks = dtTreePos.size() + filteredLeaves.size();
           if (totalBlocks > Config.getMaxTreeSize()) {
-            BlastPlaster.LOGGER.debug("Skipped huge DT tree expansion ({} blocks > max {})", totalBlocks, Config.getMaxTreeSize());
+            BlastPlaster.debug("Skipped huge DT tree expansion ({} blocks > max {})", totalBlocks, Config.getMaxTreeSize());
             continue;
           }
 
@@ -434,7 +434,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       int severed = collectSeveredDynamicWood(toHeal, affectedPos, level, java.util.Collections.emptySet());
       if (severed > 0) {
         didDtExpansion = true;
-        BlastPlaster.LOGGER.debug("Collected {} severed DT tree blocks via connectivity crawl", severed);
+        BlastPlaster.debug("Collected {} severed DT tree blocks via connectivity crawl", severed);
       }
     }
 
@@ -563,7 +563,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
           float confidence = calculateTreeConfidence(allLogs, extraLeaves, level);
 
           if (allLogs.size() + extraLeaves.size() > Config.getMaxTreeSize()) {
-            BlastPlaster.LOGGER.debug("Skipped huge vanilla tree cluster ({} blocks > max {})", allLogs.size() + extraLeaves.size(), Config.getMaxTreeSize());
+            BlastPlaster.debug("Skipped huge vanilla tree cluster ({} blocks > max {})", allLogs.size() + extraLeaves.size(), Config.getMaxTreeSize());
             continue;
           }
 

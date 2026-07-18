@@ -71,14 +71,14 @@ public class AlexsCavesCompat {
 
         ServerLevel world = (ServerLevel) event.getLevel();
         long currentTick = world.getGameTime();
-        if (currentTick - lastNukeProcessTick < 2) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, duplicate within 2 ticks"); return; }
+        if (currentTick - lastNukeProcessTick < 2) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, duplicate within 2 ticks"); return; }
         lastNukeProcessTick = currentTick;
 
-        if (!world.getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING)) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, mobGriefing off"); return; }
-        if (NO_GRIEFING_ACCESSOR != null && entity.getEntityData().get(NO_GRIEFING_ACCESSOR)) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, entity NO_GRIEFING flag set"); return; }
+        if (!world.getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING)) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, mobGriefing off"); return; }
+        if (NO_GRIEFING_ACCESSOR != null && entity.getEntityData().get(NO_GRIEFING_ACCESSOR)) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, entity NO_GRIEFING flag set"); return; }
 
         boolean shouldProcess = (Config.healAll() || Config.healNonPlayerTNT()) && Config.isAlexsCavesNukesEnabled();
-        if (!shouldProcess) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, HealAll={} HealNonPlayerTNT={} EnableAlexsCavesNukes={}", Config.healAll(), Config.healNonPlayerTNT(), Config.isAlexsCavesNukesEnabled()); return; }
+        if (!shouldProcess) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, HealAll={} HealNonPlayerTNT={} EnableAlexsCavesNukes={}", Config.healAll(), Config.healNonPlayerTNT(), Config.isAlexsCavesNukesEnabled()); return; }
 
         ExplosionMode mode = Config.healAll() ? ExplosionMode.HEAL : Config.getExplosionMode();
 
@@ -123,7 +123,7 @@ public class AlexsCavesCompat {
             }
         }
 
-        if (snapshot.isEmpty()) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: snapshot empty at {} (size {}), nothing to track", center, size); return; }
+        if (snapshot.isEmpty()) { BlastPlaster.debug("[BlastPlaster] AC nuke: snapshot empty at {} (size {}), nothing to track", center, size); return; }
 
         List<BlockPos> columnSeeds = new ArrayList<>();
         for (Map.Entry<BlockPos, BlockStatePosWrapper> e : snapshot.entrySet()) {
@@ -158,6 +158,6 @@ public class AlexsCavesCompat {
         int carveDuration = chunkCount / 3 + 60;
         int passes = Math.max(12, carveDuration / 20 + 3);
         RegionSnapshotHealer.scheduleDiffHeal(world, snapshot, 20, 20, passes, mode, BlastPlasterUtil.ALEXSCAVES_NUKE_VISUAL_CHANCE);
-        BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: snapshot {} blocks (+{} tree column) at {} (mode {}), {} diff passes scheduled", snapshot.size(), extended, center, mode, passes);
+        BlastPlaster.debug("[BlastPlaster] AC nuke: snapshot {} blocks (+{} tree column) at {} (mode {}), {} diff passes scheduled", snapshot.size(), extended, center, mode, passes);
     }
 }

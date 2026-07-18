@@ -284,7 +284,7 @@ public class ExplosionEventHandler {
       if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, eoSnapshot.keySet(), effectiveMode == ExplosionMode.HEAL); }
       int passes = Math.min(60, 9 + eoSnapshot.size() / 1500);
       RegionSnapshotHealer.scheduleDiffHeal(serverLevel, eoSnapshot, 5, 20, passes, effectiveMode, BlastPlasterUtil.getVisualSpawnChance(isCreeper, false));
-      BlastPlaster.LOGGER.debug("[BlastPlaster] EO crater watch: {} blocks tracked (mode {}), {} passes", eoSnapshot.size(), effectiveMode, passes);
+      BlastPlaster.debug("[BlastPlaster] EO crater watch: {} blocks tracked (mode {}), {} passes", eoSnapshot.size(), effectiveMode, passes);
     }
   }
 

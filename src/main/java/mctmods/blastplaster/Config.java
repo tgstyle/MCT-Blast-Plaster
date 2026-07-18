@@ -48,6 +48,7 @@ public class Config {
   private static final IntValue MIN_TICKS_BEFORE_HEAL;
   private static final IntValue RANDOM_TICK_VAR;
   private static final BooleanValue OVERRIDE_BLOCKS;
+  private static final BooleanValue DEBUG_LOGGING;
   private static final BooleanValue HEAL_FULL_TREES;
 
   private static final BooleanValue HEAL_CREEPERS;
@@ -215,6 +216,9 @@ public class Config {
     MAX_TREE_SIZE = builder.comment("Max blocks allowed in a tree for full healing (prevents lag). Large old-growth jungle trees often exceed 7500 blocks; Alex's Caves nukes hit massive areas - set higher if you see warnings.")
             .defineInRange("MaxTreeSize", 20000, 0, 50000);
     builder.pop();
+    DEBUG_LOGGING = builder.comment("If true, BlastPlaster prints detailed heal scheduling and batch telemetry to the log.")
+            .define("EnableDebugLogging", false);
+
 
     SPEC = builder.build();
   }
@@ -261,6 +265,7 @@ public class Config {
   public static int getMinimumTicksBeforeHeal() { return MIN_TICKS_BEFORE_HEAL.get(); }
   public static int getRandomTickVar() { return RANDOM_TICK_VAR.get(); }
   public static boolean isOverride() { return OVERRIDE_BLOCKS.get(); }
+  public static boolean debugLogging() { return DEBUG_LOGGING.get(); }
   public static boolean healFullTrees() { return HEAL_FULL_TREES.get(); }
   public static boolean dtSpecialDrops() { return DT_SPECIAL_DROPS.get(); }
   public static int getMaxTreeSize() { return MAX_TREE_SIZE.get(); }
