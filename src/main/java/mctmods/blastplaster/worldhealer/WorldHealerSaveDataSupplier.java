@@ -3,9 +3,8 @@ package mctmods.blastplaster.worldhealer;
 import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
-import mctmods.blastplaster.helper.MultiPhaseTickingHealList;
-import mctmods.blastplaster.helper.MultiPhaseTickingHealList.HealPhase;
 import mctmods.blastplaster.helper.TickContainer;
+import mctmods.blastplaster.helper.TickingHealList;
 import mctmods.blastplaster.util.BlastPlasterUtil;
 
 import net.minecraft.core.BlockPos;
@@ -13,6 +12,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.Level;
@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.VineBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -30,20 +31,21 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
 import net.minecraft.world.level.storage.SavedDataStorage;
-
-import net.minecraft.resources.Identifier;
 import com.mojang.serialization.Codec;
-
-import net.neoforged.fml.ModList;
-
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-
 import com.dtteam.dynamictrees.tree.TreeHelper;
+import com.dtteam.dynamictrees.block.branch.BasicRootsBlock;
+import com.dtteam.dynamictrees.block.branch.SurfaceRootBlock;
+import com.dtteam.dynamictrees.block.branch.TrunkShellBlock;
+import com.dtteam.dynamictrees.block.fruit.FruitBlock;
+import com.dtteam.dynamictrees.block.pod.PodBlock;
 import com.dtteam.dynamictrees.block.soil.SoilBlock;
 import com.dtteam.dynamictrees.block.soil.SpeciesBlockEntity;
 import com.dtteam.dynamictrees.tree.species.Species;
@@ -91,42 +93,74 @@ public class WorldHealerSaveDataSupplier extends SavedData {
   );
 
   private Level level;
-  private final MultiPhaseTickingHealList healTask = new MultiPhaseTickingHealList();
+  private final TickingHealList healTask = new TickingHealList();
   private boolean dirtyFlag = false;
 
   public WorldHealerSaveDataSupplier() {}
 
   public void onTick() {
-    if (healTask.isEmpty()) { return; }
+    if (healTask.getQueue().isEmpty()) { return; }
     Collection<BlockStatePosWrapper> blocksToHeal = healTask.processTick();
     if (blocksToHeal != null && !blocksToHeal.isEmpty()) {
+      if (Config.debugLogging()) {
+        BlockStatePosWrapper first = blocksToHeal.iterator().next();
+        BlastPlaster.LOGGER.info("Heal batch released: {} blocks at gameTime {} (first: {} at {})", blocksToHeal.size(), level.getGameTime(), first.getState().getBlock().getClass().getSimpleName(), first.getPos());
+      }
       for (BlockStatePosWrapper blockData : blocksToHeal) { heal(blockData); }
       dirtyFlag = true;
     }
   }
 
-  public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Level level) {
+  public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal) {
     if (toHeal.isEmpty()) { return; }
 
-    List<BlockStatePosWrapper> dtParts = new ArrayList<>();
-    if (ModList.get().isLoaded("dynamictrees")) {
+    int currentDelay = Config.getMinimumTicksBeforeHeal();
+    List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
+
+    List<BlockStatePosWrapper> dtRoots = new ArrayList<>();
+    List<BlockStatePosWrapper> dtSurfaceRoots = new ArrayList<>();
+    List<BlockStatePosWrapper> dtBranches = new ArrayList<>();
+    List<BlockStatePosWrapper> dtShells = new ArrayList<>();
+    List<BlockStatePosWrapper> dtLeaves = new ArrayList<>();
+    List<BlockStatePosWrapper> dtFruitPods = new ArrayList<>();
+    if (BlastPlasterUtil.DT_LOADED) {
       for (int i = toHeal.size() - 1; i >= 0; i--) {
         BlockStatePosWrapper w = toHeal.get(i);
-        BlockState state = w.getState();
-        if (BlastPlasterUtil.isDynamicTrees(state)) {
-          dtParts.add(w);
+        Block b = w.getState().getBlock();
+        if (b instanceof SurfaceRootBlock) {
+          dtSurfaceRoots.add(w);
+          toHeal.remove(i);
+          continue;
+        }
+        if (b instanceof BasicRootsBlock) {
+          dtRoots.add(w);
+          toHeal.remove(i);
+          continue;
+        }
+        if (TreeHelper.isBranch(w.getState())) {
+          dtBranches.add(w);
+          toHeal.remove(i);
+          continue;
+        }
+        if (b instanceof TrunkShellBlock) {
+          dtShells.add(w);
+          toHeal.remove(i);
+          continue;
+        }
+        if (TreeHelper.isLeaves(w.getState())) {
+          dtLeaves.add(w);
+          toHeal.remove(i);
+          continue;
+        }
+        if (b instanceof FruitBlock || b instanceof PodBlock) {
+          dtFruitPods.add(w);
           toHeal.remove(i);
         }
       }
     }
 
-    if (!dtParts.isEmpty() && ModList.get().isLoaded("dynamictrees")) {
-      dtParts.sort(Comparator.comparingInt((BlockStatePosWrapper w) -> w.getPos().getY()).reversed());
-    }
-
-    int currentDelay = Config.getMinimumTicksBeforeHeal();
-
     List<BlockStatePosWrapper> ground = new ArrayList<>();
+    List<BlockStatePosWrapper> vanillaLeaves = new ArrayList<>();
     List<BlockStatePosWrapper> vines = new ArrayList<>();
     List<BlockStatePosWrapper> flora = new ArrayList<>();
     List<BlockStatePosWrapper> bambooCane = new ArrayList<>();
@@ -135,71 +169,128 @@ public class WorldHealerSaveDataSupplier extends SavedData {
       BlockState state = w.getState();
       Block block = state.getBlock();
 
-      if (state.getBlock() instanceof VineBlock) {
-        vines.add(w);
-      } else if (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE) {
-        bambooCane.add(w);
-      } else if (state.is(BlockTags.FLOWERS) || block == Blocks.SHORT_GRASS || block == Blocks.TALL_GRASS || block == Blocks.FERN || block == Blocks.LARGE_FERN || block == Blocks.DEAD_BUSH || block == Blocks.SWEET_BERRY_BUSH) {
-        flora.add(w);
-      } else {
-        ground.add(w);
+      if (block instanceof VineBlock) { vines.add(w); }
+      else if (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE) { bambooCane.add(w); }
+      else if (block instanceof LeavesBlock) { vanillaLeaves.add(w); }
+      else if (state.is(BlockTags.FLOWERS) || block == Blocks.SHORT_GRASS || block == Blocks.TALL_GRASS || block == Blocks.FERN || block == Blocks.LARGE_FERN || block == Blocks.DEAD_BUSH || block == Blocks.SWEET_BERRY_BUSH) { flora.add(w); }
+      else { ground.add(w); }
+    }
+
+    int groundEnd = scheduleLayeredHealing(ground, currentDelay);
+
+    int pairBase = groundEnd + 4;
+    for (BlockStatePosWrapper w : dtPriority) {
+      int tick = (w.getState().getBlock() instanceof SoilBlock) ? pairBase : pairBase + 2;
+      healTask.enqueue(tick, w);
+    }
+
+    int woodTick = pairBase + 6;
+    int leavesTick = woodTick + 12;
+    int fruitTick = leavesTick + 8;
+    int floraTick = fruitTick + 6;
+
+    List<BlockStatePosWrapper> woodBatch = new ArrayList<>();
+    woodBatch.addAll(dtRoots);
+    woodBatch.addAll(dtBranches);
+    woodBatch.addAll(dtShells);
+    woodBatch.addAll(bambooCane);
+    for (BlockStatePosWrapper item : woodBatch) { healTask.enqueue(woodTick, item); }
+
+    if (!dtSurfaceRoots.isEmpty()) {
+      dtSurfaceRoots.sort((a, b) -> Integer.compare(BlastPlasterUtil.getDTRadius(b.getState()), BlastPlasterUtil.getDTRadius(a.getState())));
+      int surfaceTick = woodTick + 4;
+      for (BlockStatePosWrapper item : dtSurfaceRoots) { healTask.enqueue(surfaceTick, item); }
+    }
+
+    List<BlockStatePosWrapper> leafBatch = new ArrayList<>();
+    leafBatch.addAll(dtLeaves);
+    leafBatch.addAll(vanillaLeaves);
+    for (BlockStatePosWrapper item : leafBatch) { healTask.enqueue(leavesTick, item); }
+
+    for (BlockStatePosWrapper item : dtFruitPods) { healTask.enqueue(fruitTick, item); }
+
+    if (!flora.isEmpty()) {
+      flora.sort((a, b) -> Integer.compare(b.getPos().getY(), a.getPos().getY()));
+      int floraStep = Math.clamp(160 / flora.size(), 1, 8);
+      int floraDelay = floraTick;
+      for (BlockStatePosWrapper f : flora) {
+        healTask.enqueue(floraDelay, f);
+        floraDelay += floraStep;
       }
     }
 
+    if (!woodBatch.isEmpty() || !leafBatch.isEmpty() || !dtPriority.isEmpty()) {
+      BlastPlaster.debug("Heal timeline: ground ends {}, {} soil pairs at {}, {} wood at {}, {} surface roots at {}, {} leaves at {}, {} fruit/pods at {}", groundEnd, dtPriority.size(), pairBase, woodBatch.size(), woodTick, dtSurfaceRoots.size(), woodTick + 4, leafBatch.size(), leavesTick, dtFruitPods.size(), fruitTick);
+    }
+
+    if (!vines.isEmpty()) {
+      vines.sort((a, b) -> Integer.compare(b.getPos().getY(), a.getPos().getY()));
+      int vineDelay = leavesTick + 80;
+      int vineStep = Math.clamp(240 / vines.size(), 1, 12);
+      for (BlockStatePosWrapper vine : vines) {
+        healTask.enqueue(vineDelay, vine);
+        vineDelay += vineStep;
+      }
+    }
+
+    dirtyFlag = true;
+  }
+
+  private int scheduleLayeredHealing(List<BlockStatePosWrapper> blocks, int baseDelay) {
+    if (blocks.isEmpty()) { return baseDelay; }
+    int currentDelay = baseDelay;
+
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
-    for (BlockStatePosWrapper wrapper : ground) {
-      int y = wrapper.getPos().getY();
-      layers.computeIfAbsent(y, ignored -> new ArrayList<>()).add(wrapper);
+    for (BlockStatePosWrapper wrapper : blocks) {
+      layers.computeIfAbsent(wrapper.getPos().getY(), ignored -> new ArrayList<>()).add(wrapper);
     }
 
     int var = Config.getRandomTickVar();
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
-        healTask.enqueue(HealPhase.GROUND, layerDelay, layer.getFirst());
+        healTask.enqueue(layerDelay, layer.getFirst());
         currentDelay += 20;
       } else {
         for (BlockStatePosWrapper wrapper : layer) {
           int delay = layerDelay + level.getRandom().nextInt(var);
-          healTask.enqueue(HealPhase.GROUND, delay, wrapper);
+          healTask.enqueue(delay, wrapper);
         }
         currentDelay += var;
       }
     }
+    return currentDelay;
+  }
 
-    if (!bambooCane.isEmpty()) {
-      int batchTick = currentDelay + 10;
-      for (BlockStatePosWrapper item : bambooCane) { healTask.enqueue(HealPhase.TREE, batchTick, item); }
-      currentDelay = batchTick + 5;
-    }
+  private List<BlockStatePosWrapper> extractDtPriorityBlocks(List<BlockStatePosWrapper> toHeal) {
+    if (!BlastPlasterUtil.DT_LOADED) { return new ArrayList<>(); }
+    List<BlockStatePosWrapper> priority = new ArrayList<>();
+    Set<BlockPos> toRemove = new HashSet<>();
+    Set<BlockPos> seenRoots = new HashSet<>();
 
-    if (ModList.get().isLoaded("dynamictrees") && !dtParts.isEmpty()) {
-      int dtBatchTick = currentDelay + 10;
-      for (BlockStatePosWrapper w : dtParts) {
-        healTask.enqueue(HealPhase.TREE, dtBatchTick, w);
-      }
-      currentDelay = dtBatchTick + 10;
-    }
+    Map<BlockPos, BlockStatePosWrapper> byPos = new HashMap<>();
+    for (BlockStatePosWrapper w : toHeal) { byPos.put(w.getPos(), w); }
 
-    if (!flora.isEmpty()) {
-      flora.sort((a, b) -> Integer.compare(b.getPos().getY(), a.getPos().getY()));
-      int floraStart = currentDelay + 25;
-      for (BlockStatePosWrapper f : flora) {
-        healTask.enqueue(HealPhase.FLORA, floraStart, f);
-        floraStart += 8;
-      }
-    }
+    for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
+      if (w.getState().getBlock() instanceof SoilBlock) {
+        BlockPos rootPos = w.getPos();
+        if (seenRoots.add(rootPos)) {
+          priority.add(w);
+          toRemove.add(rootPos);
 
-    if (!vines.isEmpty()) {
-      vines.sort((a, b) -> Integer.compare(b.getPos().getY(), a.getPos().getY()));
-      int vineDelay = currentDelay + 40;
-      for (BlockStatePosWrapper vine : vines) {
-        healTask.enqueue(HealPhase.FLORA, vineDelay, vine);
-        vineDelay += 12;
+          for (int dy = 1; dy <= 3; dy++) {
+            BlockStatePosWrapper trunk = byPos.get(rootPos.above(dy));
+            if (trunk == null) { continue; }
+            if (!TreeHelper.isBranch(trunk.getState())) { continue; }
+            if (toRemove.add(trunk.getPos())) { priority.add(trunk); }
+            break;
+          }
+        }
       }
     }
 
-    dirtyFlag = true;
+    toHeal.removeIf(w -> toRemove.contains(w.getPos()));
+    return priority;
   }
 
   public void addMultiBlockStructures(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level) {
@@ -279,7 +370,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
       return;
     }
 
-    if (ModList.get().isLoaded("dynamictrees") && TreeHelper.getTreePart(restoreState) != TreeHelper.NULL_TREE_PART) {
+    if (BlastPlasterUtil.DT_LOADED && TreeHelper.getTreePart(restoreState) != TreeHelper.NULL_TREE_PART) {
       level.setBlock(pos, restoreState, 3);
       level.updateNeighborsAt(pos, restoreState.getBlock());
 
@@ -303,6 +394,14 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     BlockState currentState = level.getBlockState(pos);
     if (currentState.equals(restoreState)) { return; }
 
+    if (restoreState.getBlock() instanceof LeavesBlock
+            && restoreState.hasProperty(LeavesBlock.DISTANCE)
+            && restoreState.hasProperty(LeavesBlock.PERSISTENT)
+            && !restoreState.getValue(LeavesBlock.PERSISTENT)
+            && restoreState.getValue(LeavesBlock.DISTANCE) >= 7) {
+      restoreState = restoreState.setValue(LeavesBlock.DISTANCE, 6);
+    }
+
     FluidState fluid = level.getFluidState(pos);
     boolean isEmpty = currentState.isAir();
     boolean hasFluid = !fluid.isEmpty();
@@ -314,32 +413,25 @@ public class WorldHealerSaveDataSupplier extends SavedData {
 
   public void deserializeNBT(CompoundTag tag) {
     ListTag tagList = tag.getList("healTaskList").orElseGet(ListTag::new);
-    List<BlockStatePosWrapper> allWrappers = new ArrayList<>();
+    int cumulative = 0;
+    int leadOffset = -1;
+    int restored = 0;
     for (Tag t : tagList) {
       if (!(t instanceof CompoundTag tcTag)) { continue; }
+      cumulative += tcTag.getIntOr("ticks", 0);
+      if (leadOffset < 0) { leadOffset = Math.max(0, cumulative - Config.getMinimumTicksBeforeHeal()); }
       ListTag bdListTag = tcTag.getList("blockDataList").orElseGet(ListTag::new);
       for (Tag bt : bdListTag) {
         if (!(bt instanceof CompoundTag bdTag)) { continue; }
         BlockStatePosWrapper bd = new BlockStatePosWrapper();
         bd.readNBT(bdTag, level);
-        allWrappers.add(bd);
+        healTask.enqueue(Math.max(1, cumulative - leadOffset), bd);
+        restored++;
       }
     }
-    if (!allWrappers.isEmpty()) {
-      BlastPlaster.LOGGER.info("[BlastPlaster] Restored {} pending heal blocks from saved data", allWrappers.size());
-      for (BlockStatePosWrapper w : allWrappers) {
-        BlockState state = w.getState();
-        if (state.getBlock() instanceof VineBlock) {
-          healTask.enqueue(HealPhase.FLORA, 1, w);
-        } else if (state.getBlock() == Blocks.BAMBOO || state.getBlock() == Blocks.SUGAR_CANE || (ModList.get().isLoaded("dynamictrees") && (TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.getRooty(state) != null))) {
-          healTask.enqueue(HealPhase.TREE, 1, w);
-        } else if (state.is(BlockTags.FLOWERS) || state.getBlock() == Blocks.SHORT_GRASS || state.getBlock() == Blocks.TALL_GRASS || state.getBlock() == Blocks.FERN || state.getBlock() == Blocks.LARGE_FERN || state.getBlock() == Blocks.DEAD_BUSH || state.getBlock() == Blocks.SWEET_BERRY_BUSH) {
-          healTask.enqueue(HealPhase.FLORA, 1, w);
-        } else {
-          healTask.enqueue(HealPhase.GROUND, 1, w);
-        }
-      }
+    if (restored > 0) {
       dirtyFlag = true;
+      BlastPlaster.LOGGER.info("[BlastPlaster] Restored heal queue: {} blocks resuming over {} ticks", restored, Math.max(1, cumulative - leadOffset));
     }
   }
 
@@ -355,6 +447,6 @@ public class WorldHealerSaveDataSupplier extends SavedData {
   @Override public boolean isDirty() {
     boolean d = dirtyFlag;
     dirtyFlag = false;
-    return d || !healTask.isEmpty();
+    return d || !healTask.getQueue().isEmpty();
   }
 }

@@ -32,7 +32,8 @@ public class BlastPlasterUtil {
 
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
     public static final float CREEPER_VISUAL_CHANCE = 0.25f;
-    public static final float ALEXSCAVES_NUKE_VISUAL_CHANCE = 0.01f;
+
+    public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
 
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
 
@@ -50,8 +51,7 @@ public class BlastPlasterUtil {
         }
     }
 
-    public static float getVisualSpawnChance(boolean isCreeper, boolean isAlexsCavesNuke) {
-        if (isAlexsCavesNuke) { return ALEXSCAVES_NUKE_VISUAL_CHANCE; }
+    public static float getVisualSpawnChance(boolean isCreeper) {
         if (isCreeper) { return CREEPER_VISUAL_CHANCE; }
         return DEFAULT_VISUAL_CHANCE;
     }
@@ -145,7 +145,7 @@ public class BlastPlasterUtil {
     public record PendingDrop(Vec3 pos, ItemStack stack, boolean isGentle) {}
 
     public static boolean isDynamicTrees(BlockState state) {
-        if (!ModList.get().isLoaded("dynamictrees")) { return false; }
+        if (!DT_LOADED) { return false; }
         if (TreeHelper.getTreePart(state) != TreeHelper.NULL_TREE_PART) {
             return true;
         }
@@ -154,7 +154,7 @@ public class BlastPlasterUtil {
     }
 
     public static int getDTRadius(BlockState state) {
-        if (!ModList.get().isLoaded("dynamictrees")) { return 1; }
+        if (!DT_LOADED) { return 1; }
         for (Property<?> p : state.getProperties()) {
             if ("radius".equals(p.getName()) && p instanceof IntegerProperty radiusProp) {
                 return state.getValue(radiusProp);
@@ -164,7 +164,7 @@ public class BlastPlasterUtil {
     }
 
     public static List<ItemStack> generateDynamicTreesDrops(ServerLevel level, BlockState state) {
-        if (!ModList.get().isLoaded("dynamictrees")) { return new ArrayList<>(); }
+        if (!DT_LOADED) { return new ArrayList<>(); }
 
         int radius = getDTRadius(state);
         List<ItemStack> drops = new ArrayList<>();
@@ -194,15 +194,6 @@ public class BlastPlasterUtil {
         for (ItemStack stack : drops) { pending.add(new PendingDrop(center, stack, isGentle)); }
     }
 
-    public static void spawnDynamicTreesDrops(ServerLevel level, BlockPos pos, BlockState state) {
-        List<ItemStack> drops = generateDynamicTreesDrops(level, state);
-        Vec3 center = Vec3.atCenterOf(pos);
-        for (ItemStack stack : drops) {
-            ItemEntity item = new ItemEntity(level, center.x, center.y + 0.5, center.z, stack);
-            applyTossVelocity(item, level);
-            level.addFreshEntity(item);
-        }
-    }
 
     public static void spawnVisualTossedBlock(ServerLevel level, BlockPos pos, BlockState state) {
         ItemStack stack = new ItemStack(state.getBlock());
@@ -251,7 +242,6 @@ public class BlastPlasterUtil {
         clearExplodedBlock(level, pos);
     }
 
-    public static boolean calculateRealDrop(ServerLevel level) { return level.getRandom().nextFloat() < (Config.enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
 
     public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();
