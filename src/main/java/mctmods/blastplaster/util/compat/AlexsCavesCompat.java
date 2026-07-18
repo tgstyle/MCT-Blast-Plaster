@@ -5,91 +5,92 @@ import mctmods.blastplaster.Config;
 import mctmods.blastplaster.Config.ExplosionMode;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.util.BlastPlasterUtil;
-import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
+import mctmods.blastplaster.worldhealer.RegionSnapshotHealer;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.GameRules;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.loot.LootParams;
-import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
-import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
-
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 @SuppressWarnings("unchecked")
 public class AlexsCavesCompat {
 
     private static final EntityType<?> NUCLEAR_EXPLOSION = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.fromNamespaceAndPath("alexscaves", "nuclear_explosion"));
     private static final TagKey<Block> NUKE_PROOF = TagKey.create(Registries.BLOCK, ResourceLocation.fromNamespaceAndPath("alexscaves", "nuke_proof"));
-    private static final Block TREMORZILLA_EGG = ForgeRegistries.BLOCKS.getValue(ResourceLocation.fromNamespaceAndPath("alexscaves", "tremorzilla_egg"));
 
-    private static net.minecraft.network.syncher.EntityDataAccessor<Float> SIZE_ACCESSOR = null;
-    private static Method spawnDinosaursMethod = null;
+    private static final int TREE_COLUMN_EXTENSION = 40;
+    private static final int TREE_COLUMN_AIR_GAP = 2;
+
+    private static EntityDataAccessor<Float> SIZE_ACCESSOR = null;
+    private static EntityDataAccessor<Boolean> NO_GRIEFING_ACCESSOR = null;
 
     private static long lastNukeProcessTick = 0;
 
     static {
+        if (BlastPlasterUtil.AC_LOADED) { initAccessors(); }
+    }
+
+    private static void initAccessors() {
         try {
             Class<?> explosionClass = Class.forName("com.github.alexmodguy.alexscaves.server.entity.item.NuclearExplosionEntity");
             Field sizeField = explosionClass.getDeclaredField("SIZE");
             sizeField.setAccessible(true);
-            SIZE_ACCESSOR = (net.minecraft.network.syncher.EntityDataAccessor<Float>) sizeField.get(null);
+            SIZE_ACCESSOR = (EntityDataAccessor<Float>) sizeField.get(null);
 
-            Class<?> eggClass = Class.forName("com.github.alexmodguy.alexscaves.server.block.TremorzillaEggBlock");
-            spawnDinosaursMethod = eggClass.getMethod("spawnDinosaurs", Level.class, BlockPos.class, BlockState.class);
+            Field griefField = explosionClass.getDeclaredField("NO_GRIEFING");
+            griefField.setAccessible(true);
+            NO_GRIEFING_ACCESSOR = (EntityDataAccessor<Boolean>) griefField.get(null);
         }
-        catch (Exception e) { BlastPlaster.LOGGER.warn("Alex's Caves compatibility: Reflection failed for accessors/methods. Using safe fallbacks.", e); }
+        catch (Exception e) { BlastPlaster.LOGGER.warn("Alex's Caves compatibility: Reflection failed for accessors. Using safe fallbacks.", e); }
     }
 
+
     @SubscribeEvent public void onNuclearExplosionSpawn(EntityJoinLevelEvent event) {
-        if (event.getLevel().isClientSide || NUCLEAR_EXPLOSION == null) { return; }
+        if (!BlastPlasterUtil.AC_LOADED || event.getLevel().isClientSide || NUCLEAR_EXPLOSION == null) { return; }
         Entity entity = event.getEntity();
         if (entity.getType() != NUCLEAR_EXPLOSION) { return; }
 
         ServerLevel world = (ServerLevel) event.getLevel();
         long currentTick = world.getGameTime();
-        if (currentTick - lastNukeProcessTick < 2) { return; }
+        if (currentTick - lastNukeProcessTick < 2) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, duplicate within 2 ticks"); return; }
         lastNukeProcessTick = currentTick;
 
-        if (!world.getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING)) { return; }
+        if (!world.getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING)) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, mobGriefing off"); return; }
+        if (NO_GRIEFING_ACCESSOR != null && entity.getEntityData().get(NO_GRIEFING_ACCESSOR)) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, entity NO_GRIEFING flag set"); return; }
 
         boolean shouldProcess = (Config.healAll() || Config.healNonPlayerTNT()) && Config.isAlexsCavesNukesEnabled();
-        if (!shouldProcess) { return; }
+        if (!shouldProcess) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: skipped, HealAll={} HealNonPlayerTNT={} EnableAlexsCavesNukes={}", Config.healAll(), Config.healNonPlayerTNT(), Config.isAlexsCavesNukesEnabled()); return; }
 
-        ExplosionMode mode = Config.getExplosionMode();
+        ExplosionMode mode = Config.healAll() ? ExplosionMode.HEAL : Config.getExplosionMode();
+
         float size = SIZE_ACCESSOR != null ? entity.getEntityData().get(SIZE_ACCESSOR) : 1.75F;
         int chunksAffected = (int) Math.ceil(size);
         int radius = chunksAffected * 15;
 
         BlockPos center = entity.blockPosition();
-        List<BlockStatePosWrapper> toProcess = new ArrayList<>();
-        Set<BlockPos> affectedPos = new HashSet<>();
+        Map<BlockPos, BlockStatePosWrapper> snapshot = new HashMap<>();
 
         BlockPos.MutableBlockPos carve = new BlockPos.MutableBlockPos();
         final float fixedWidth = 0.85F;
-        Explosion dummyExplosion = new Explosion(world, null, center.getX(), center.getY(), center.getZ(), 10.0F, List.of());
 
         for (int cx = -chunksAffected; cx <= chunksAffected; cx++) {
             for (int cy = -chunksAffected; cy <= chunksAffected; cy++) {
@@ -100,6 +101,7 @@ public class AlexsCavesCompat {
                             for (int y = 15; y >= 0; y--) {
                                 int worldY = Mth.clamp(chunkCorner.getY() + y, world.getMinBuildHeight(), world.getMaxBuildHeight());
                                 carve.set(chunkCorner.getX() + x, worldY, chunkCorner.getZ() + z);
+                                if (snapshot.containsKey(carve)) { continue; }
 
                                 double absDy = Math.abs(center.getY() - carve.getY());
                                 double yDist = Math.max(0.0, 1.0 - absDy / (radius * 1.5));
@@ -108,18 +110,11 @@ public class AlexsCavesCompat {
 
                                 if (distToCenterSqr <= targetRadiusSqr) {
                                     BlockState state = world.getBlockState(carve);
-                                    boolean destroyable = !state.is(NUKE_PROOF) &&
-                                            (state.getBlock().getExplosionResistance(state, world, carve, dummyExplosion) < 3600000.0) ||
-                                            state.getBlock() == TREMORZILLA_EGG;
-                                    if (destroyable && (!state.isAir() || !state.getFluidState().isEmpty())) {
-                                        toProcess.add(new BlockStatePosWrapper(world, carve.immutable(), state));
-                                        affectedPos.add(carve.immutable());
-
-                                        if (state.getBlock() == TREMORZILLA_EGG && spawnDinosaursMethod != null) {
-                                            try { spawnDinosaursMethod.invoke(state.getBlock(), world, carve, state); }
-                                            catch (Exception e) { BlastPlaster.LOGGER.warn("Failed to invoke spawnDinosaurs for TremorzillaEggBlock.", e); }
-                                        }
-                                    }
+                                    if (state.isAir()) { continue; }
+                                    if (state.is(NUKE_PROOF)) { continue; }
+                                    if (state.getBlock() == Blocks.TNT) { continue; }
+                                    BlockPos immutable = carve.immutable();
+                                    snapshot.put(immutable, new BlockStatePosWrapper(world, immutable, state));
                                 }
                             }
                         }
@@ -128,52 +123,41 @@ public class AlexsCavesCompat {
             }
         }
 
-        if (toProcess.isEmpty()) { return; }
+        if (snapshot.isEmpty()) { BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: snapshot empty at {} (size {}), nothing to track", center, size); return; }
 
-        if (Config.healFullTrees() && ModList.get().isLoaded("dynamictrees")) {
-            WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(world);
-            if (expansionHealer != null) { expansionHealer.addExtraTreeBlocks(toProcess, affectedPos, world); }
-        }
-
-        if (mode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, world); }
-        if (mode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, world); }
-
-        if (mode == ExplosionMode.HEAL) {
-            WorldHealerSaveDataSupplier worldHealer = BlastPlaster.getWorldHealer(world);
-            if (worldHealer != null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, world); }
-        }
-
-        if (mode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos); }
-
-        for (BlockStatePosWrapper wrapper : toProcess) {
-            BlockPos pos = wrapper.getPos();
-            BlockState state = wrapper.getState();
-
-            boolean realDrop = false;
-            if (mode == ExplosionMode.EJECT_DROPS) {
-                realDrop = BlastPlasterUtil.calculateRealDrop(world);
-                if (realDrop) {
-                    if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.spawnDynamicTreesDrops(world, pos, state); }
-                    else {
-                        BlockEntity be = world.getBlockEntity(pos);
-                        LootParams.Builder builder = new LootParams.Builder(world)
-                                .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                                .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
-                                .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
-                                .withOptionalParameter(LootContextParams.THIS_ENTITY, entity)
-                                .withParameter(LootContextParams.EXPLOSION_RADIUS, radius * 0.6F);
-                        for (ItemStack stack : state.getDrops(builder)) {
-                            if (stack.isEmpty()) { continue; }
-                            ItemEntity item = new ItemEntity(world, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
-                            BlastPlasterUtil.applyTossVelocity(item, world);
-                            world.addFreshEntity(item);
-                        }
-                    }
-                }
+        List<BlockPos> columnSeeds = new ArrayList<>();
+        for (Map.Entry<BlockPos, BlockStatePosWrapper> e : snapshot.entrySet()) {
+            BlockState s = e.getValue().getState();
+            if (s.is(BlockTags.LOGS) || s.getBlock() instanceof LeavesBlock || BlastPlasterUtil.isDynamicTreesAssembly(s)) {
+                if (!snapshot.containsKey(e.getKey().above())) { columnSeeds.add(e.getKey()); }
             }
-
-            float visualChance = BlastPlasterUtil.getVisualSpawnChance(false, true);
-            BlastPlasterUtil.finalizeExplodedBlock(world, pos, state, mode, realDrop, visualChance);
         }
+
+        int extended = 0;
+        BlockPos.MutableBlockPos up = new BlockPos.MutableBlockPos();
+        for (BlockPos seed : columnSeeds) {
+            int airGap = 0;
+            for (int dy = 1; dy <= TREE_COLUMN_EXTENSION && airGap <= TREE_COLUMN_AIR_GAP; dy++) {
+                int yy = seed.getY() + dy;
+                if (yy > world.getMaxBuildHeight() - 1) { break; }
+                up.set(seed.getX(), yy, seed.getZ());
+                if (snapshot.containsKey(up)) { airGap = 0; continue; }
+                BlockState state = world.getBlockState(up);
+                if (state.isAir()) { airGap++; continue; }
+                airGap = 0;
+                if (state.getBlock() == Blocks.TNT) { continue; }
+                BlockPos immutable = up.immutable();
+                snapshot.put(immutable, new BlockStatePosWrapper(world, immutable, state));
+                extended++;
+            }
+        }
+
+        if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, snapshot.keySet(), mode == ExplosionMode.HEAL); }
+
+        int chunkCount = (2 * chunksAffected + 1) * (2 * chunksAffected + 1) * (2 * chunksAffected + 1);
+        int carveDuration = chunkCount / 3 + 60;
+        int passes = Math.max(12, carveDuration / 20 + 3);
+        RegionSnapshotHealer.scheduleDiffHeal(world, snapshot, 20, 20, passes, mode, BlastPlasterUtil.ALEXSCAVES_NUKE_VISUAL_CHANCE);
+        BlastPlaster.LOGGER.debug("[BlastPlaster] AC nuke: snapshot {} blocks (+{} tree column) at {} (mode {}), {} diff passes scheduled", snapshot.size(), extended, center, mode, passes);
     }
 }

@@ -5,6 +5,7 @@ import mctmods.blastplaster.Config;
 import mctmods.blastplaster.Config.ExplosionMode;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.util.BlastPlasterUtil;
+import mctmods.blastplaster.worldhealer.RegionSnapshotHealer;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.core.BlockPos;
@@ -13,11 +14,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.monster.Creeper;
@@ -31,17 +34,15 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
-
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -54,15 +55,20 @@ public class ExplosionEventHandler {
 
   public ExplosionEventHandler() { MinecraftForge.EVENT_BUS.register(this); }
 
+  private static final long MAX_SNAPSHOT_VOLUME = 2_097_152L;
   private static long lastFlashTick = 0;
   private static final Map<BlockPos, Long> lastProcessedPositions = new HashMap<>();
+  private static final List<PendingEoRegion> pendingEoRegions = new ArrayList<>();
+
+  private record PendingEoRegion(AABB box, long expireTick) {}
 
   private static Method eoClusterMethod = null;
   private static Method eoCraterMethod = null;
   private static Method eoGetPowerMethod = null;
+  private static Class<?> dtFallingTreeClass = null;
 
   static {
-    if (ModList.get().isLoaded("explosionoverhaul")) {
+    if (BlastPlasterUtil.EO_LOADED) {
       try {
         Class<?> clusterClass = Class.forName("com.vinlanx.explosionoverhaul.ExplosionClusterHandler");
         eoClusterMethod = clusterClass.getMethod("calculateClusteredPower", net.minecraft.world.level.Level.class, Vec3.class, float.class);
@@ -73,11 +79,15 @@ public class ExplosionEventHandler {
         Class<?> powerInterface = Class.forName("com.vinlanx.explosionoverhaul.api.IExplosionPower");
         eoGetPowerMethod = powerInterface.getMethod("getPower");
       } catch (Exception e) {
-        BlastPlaster.LOGGER.warn("[BlastPlaster] EO reflection setup failed - large crater support disabled", e);
+        BlastPlaster.LOGGER.warn("[BlastPlaster] EO reflection setup failed - EO crater healing disabled", e);
         eoClusterMethod = null;
         eoCraterMethod = null;
         eoGetPowerMethod = null;
       }
+    }
+    if (BlastPlasterUtil.DT_LOADED) {
+      try { dtFallingTreeClass = Class.forName("com.ferreusveritas.dynamictrees.entity.FallingTreeEntity"); }
+      catch (Exception e) { BlastPlaster.LOGGER.warn("[BlastPlaster] DT FallingTreeEntity reflection failed - DT felling suppression disabled", e); }
     }
   }
 
@@ -120,181 +130,229 @@ public class ExplosionEventHandler {
       }
     }
 
-    if (!processThis) {
-      if (Config.isExplosionOverhaulEnabled()) { processThis = true; }
+    if (!processThis) { return; }
+
+    ServerLevel serverLevel = (ServerLevel) event.getLevel();
+    Vec3 explosionCenter = explosion.getPosition();
+
+    long currentTick = serverLevel.getGameTime();
+    lastProcessedPositions.entrySet().removeIf(e -> currentTick - e.getValue() > 600L);
+
+    if (Config.enableExplosionFlash()) { spawnImmediateExplosionVisuals(serverLevel, explosionCenter); }
+    if (Config.enableExplosionSmoke()) { spawnExplosionSmoke(serverLevel, explosionCenter); }
+
+    ExplosionMode mode = Config.getExplosionMode();
+    ExplosionMode effectiveMode = (isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops()) ? ExplosionMode.EJECT_DROPS : mode;
+    if (Config.healAll()) { effectiveMode = ExplosionMode.HEAL; }
+    WorldHealerSaveDataSupplier worldHealer = (effectiveMode == ExplosionMode.HEAL) ? BlastPlaster.getWorldHealer(serverLevel) : null;
+
+    Map<BlockPos, BlockStatePosWrapper> eoSnapshot = null;
+    boolean eoActive = Config.isExplosionOverhaulEnabled() && eoClusterMethod != null && eoCraterMethod != null && eoGetPowerMethod != null;
+    if (eoActive) { eoSnapshot = buildEoSnapshot(serverLevel, explosion, explosionCenter, currentTick); }
+
+    boolean forcePlayerTNTDrops = isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops();
+    boolean indirectIsPlayer = indirect instanceof Player;
+
+    var toProcess = new ArrayList<BlockStatePosWrapper>();
+    var affectedPos = new HashSet<BlockPos>();
+
+    for (BlockPos pos : event.getAffectedBlocks()) {
+      BlockState state = serverLevel.getBlockState(pos);
+      if (state.isAir()) { continue; }
+      BlockStatePosWrapper wrapper = new BlockStatePosWrapper(serverLevel, pos, state);
+      toProcess.add(wrapper);
+      affectedPos.add(pos);
     }
 
-    if (processThis) {
-      ServerLevel serverLevel = (ServerLevel) event.getLevel();
-      Vec3 explosionCenter = explosion.getPosition();
-
-      long currentTick = serverLevel.getGameTime();
-      lastProcessedPositions.entrySet().removeIf(e -> currentTick - e.getValue() > 600L);
-
-      if (Config.enableExplosionFlash()) { spawnImmediateExplosionVisuals(serverLevel, explosionCenter); }
-      if (Config.enableExplosionSmoke()) { spawnExplosionSmoke(serverLevel, explosionCenter); }
-
-      boolean isEOExplosion = Config.isExplosionOverhaulEnabled() && eoClusterMethod != null && eoCraterMethod != null;
-
-      if (isEOExplosion && !Config.healAll()) {
-        return;
+    if (!toProcess.isEmpty()) {
+      if (Config.healFullTrees()) {
+        WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(serverLevel);
+        if (expansionHealer != null) { expansionHealer.addExtraTreeBlocks(toProcess, affectedPos, serverLevel); }
       }
 
-      ExplosionMode mode = Config.getExplosionMode();
-      ExplosionMode effectiveMode = (isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops()) ? ExplosionMode.EJECT_DROPS : mode;
-      if (Config.healAll()) { effectiveMode = ExplosionMode.HEAL; }
-      WorldHealerSaveDataSupplier worldHealer = (effectiveMode == ExplosionMode.HEAL) ? BlastPlaster.getWorldHealer(serverLevel) : null;
+      if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, serverLevel); }
+      if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, serverLevel); }
 
-      boolean forcePlayerTNTDrops = isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops();
-      boolean indirectIsPlayer = indirect instanceof Player;
+      if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos, effectiveMode == ExplosionMode.HEAL); }
 
-      boolean skipInvasiveActions = isEOExplosion && !Config.healAll();
+      explosion.getToBlow().removeAll(affectedPos);
 
-      var toProcess = new ArrayList<BlockStatePosWrapper>();
-      var affectedPos = new HashSet<BlockPos>();
+      if (worldHealer != null && eoSnapshot == null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, serverLevel); }
 
-      if (isEOExplosion) {
-        float basePower = 4.0F;
-        try {
-          if (eoGetPowerMethod != null) {
-            basePower = (float) eoGetPowerMethod.invoke(explosion);
-          }
-        } catch (Exception ignored) {}
-        try {
-          float clusteredPower = (float) eoClusterMethod.invoke(null, serverLevel, explosionCenter, basePower);
-          @SuppressWarnings("unchecked")
-          Set<BlockPos> eoCrater = (Set<BlockPos>) eoCraterMethod.invoke(null, serverLevel, explosionCenter, clusteredPower);
-          for (BlockPos pos : eoCrater) {
-            BlockState state = serverLevel.getBlockState(pos);
-            if (state.isAir()) { continue; }
-            if (state.getBlock() == Blocks.TNT) { continue; }
-            BlockStatePosWrapper wrapper = new BlockStatePosWrapper(serverLevel, pos, state);
-            toProcess.add(wrapper);
-            affectedPos.add(pos);
-          }
-        } catch (Exception e) {
-          BlastPlaster.LOGGER.warn("[BlastPlaster] EO clustered crater reflection failed, falling back to vanilla list", e);
-          isEOExplosion = false;
-        }
-      }
+      List<BlastPlasterUtil.PendingDrop> pendingRealDrops = new ArrayList<>();
 
-      if (!isEOExplosion) {
-        for (BlockPos pos : event.getAffectedBlocks()) {
-          BlockState state = serverLevel.getBlockState(pos);
-          if (state.isAir()) { continue; }
-          BlockStatePosWrapper wrapper = new BlockStatePosWrapper(serverLevel, pos, state);
-          toProcess.add(wrapper);
-          affectedPos.add(pos);
-        }
-      }
-
-      if (!toProcess.isEmpty()) {
-        if (!skipInvasiveActions) {
-          if (Config.healFullTrees()) {
-            WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(serverLevel);
-            if (expansionHealer != null) { expansionHealer.addExtraTreeBlocks(toProcess, affectedPos, serverLevel); }
-          }
-
-          if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, serverLevel); }
-          if (effectiveMode != ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, serverLevel); }
-
-          if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos); }
-
-          explosion.getToBlow().removeAll(affectedPos);
-        }
-
-        if (worldHealer != null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, serverLevel); }
-
-        if (!skipInvasiveActions) {
-          List<BlastPlasterUtil.PendingDrop> pendingRealDrops = new ArrayList<>();
-
-          if (effectiveMode == ExplosionMode.EJECT_DROPS) {
-            if (forcePlayerTNTDrops) {
-              for (BlockStatePosWrapper wrapper : toProcess) {
-                BlockPos pos = wrapper.getPos();
-                BlockState state = wrapper.getState();
-                if (state.getBlock() == Blocks.TNT) { continue; }
-                if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, true); } else if (Config.playerTNTDropFullBlocks()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), new ItemStack(state.getBlock()), true)); } else {
-                  state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
-                  BlockEntity be = serverLevel.getBlockEntity(pos);
-                  LootParams.Builder builder = new LootParams.Builder(serverLevel)
-                          .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                          .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
-                          .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
-                          .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder);
-                  for (ItemStack stack : state.getDrops(builder)) {
-                    if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, true)); }
-                  }
-                }
-              }
-            }
-
-            if (isCreeper) {
-              for (BlockStatePosWrapper wrapper : toProcess) {
-                BlockPos pos = wrapper.getPos();
-                BlockState state = wrapper.getState();
-                if (state.getBlock() == Blocks.TNT) { continue; }
-                if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false); } else {
-                  state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
-                  BlockEntity be = serverLevel.getBlockEntity(pos);
-                  LootParams.Builder builder = new LootParams.Builder(serverLevel)
-                          .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                          .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
-                          .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
-                          .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder)
-                          .withParameter(LootContextParams.EXPLOSION_RADIUS, 3.0F);
-                  for (ItemStack stack : state.getDrops(builder)) {
-                    if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, false)); }
-                  }
-                }
-              }
-            }
-          }
-
+      if (effectiveMode == ExplosionMode.EJECT_DROPS) {
+        if (forcePlayerTNTDrops) {
           for (BlockStatePosWrapper wrapper : toProcess) {
             BlockPos pos = wrapper.getPos();
-            long last = lastProcessedPositions.getOrDefault(pos, 0L);
-            if (currentTick - last < 5) { continue; }
-            lastProcessedPositions.put(pos, currentTick);
-
             BlockState state = wrapper.getState();
-
-            if (effectiveMode == ExplosionMode.EJECT_DROPS && !(forcePlayerTNTDrops || isCreeper)) {
-              if (state.getBlock() == Blocks.TNT) { continue; }
-              if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false); } else {
-                state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
-                BlockEntity be = serverLevel.getBlockEntity(pos);
-                LootParams.Builder builder = new LootParams.Builder(serverLevel)
-                        .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                        .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
-                        .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
-                        .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder)
-                        .withParameter(LootContextParams.EXPLOSION_RADIUS, Math.max(3.0F, (float) Math.sqrt(toProcess.size()) / 2.0F));
-                for (ItemStack stack : state.getDrops(builder)) {
-                  if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, false)); }
-                }
+            if (state.getBlock() == Blocks.TNT) { continue; }
+            if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, true); }
+            else if (Config.playerTNTDropFullBlocks()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), new ItemStack(state.getBlock()), true)); }
+            else {
+              state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
+              BlockEntity be = serverLevel.getBlockEntity(pos);
+              LootParams.Builder builder = new LootParams.Builder(serverLevel)
+                      .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                      .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
+                      .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
+                      .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder);
+              for (ItemStack stack : state.getDrops(builder)) {
+                if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, true)); }
               }
             }
-
-            float visualChance = BlastPlasterUtil.getVisualSpawnChance(isCreeper, false);
-            BlastPlasterUtil.finalizeExplodedBlock(serverLevel, pos, state, effectiveMode, false, visualChance);
-          }
-
-          if (!pendingRealDrops.isEmpty()) {
-            int nextTick = serverLevel.getServer().getTickCount() + 2;
-            serverLevel.getServer().tell(new TickTask(nextTick, () -> {
-              for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
-                ItemEntity item = new ItemEntity(serverLevel, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
-                if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, serverLevel); } else { BlastPlasterUtil.applyTossVelocity(item, serverLevel); }
-                serverLevel.addFreshEntity(item);
-              }
-            }));
           }
         }
 
-        if (Config.enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
+        if (isCreeper) {
+          for (BlockStatePosWrapper wrapper : toProcess) {
+            BlockPos pos = wrapper.getPos();
+            BlockState state = wrapper.getState();
+            if (state.getBlock() == Blocks.TNT) { continue; }
+            if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false); }
+            else {
+              state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
+              BlockEntity be = serverLevel.getBlockEntity(pos);
+              LootParams.Builder builder = new LootParams.Builder(serverLevel)
+                      .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                      .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
+                      .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
+                      .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder)
+                      .withParameter(LootContextParams.EXPLOSION_RADIUS, 3.0F);
+              for (ItemStack stack : state.getDrops(builder)) {
+                if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, false)); }
+              }
+            }
+          }
+        }
+      }
+
+      for (BlockStatePosWrapper wrapper : toProcess) {
+        BlockPos pos = wrapper.getPos();
+        long last = lastProcessedPositions.getOrDefault(pos, 0L);
+        if (currentTick - last < 5) { continue; }
+        lastProcessedPositions.put(pos, currentTick);
+
+        BlockState state = wrapper.getState();
+
+        if (effectiveMode == ExplosionMode.EJECT_DROPS && !(forcePlayerTNTDrops || isCreeper)) {
+          if (state.getBlock() == Blocks.TNT) { continue; }
+          if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false); }
+          else {
+            state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
+            BlockEntity be = serverLevel.getBlockEntity(pos);
+            LootParams.Builder builder = new LootParams.Builder(serverLevel)
+                    .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                    .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
+                    .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
+                    .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder)
+                    .withParameter(LootContextParams.EXPLOSION_RADIUS, Math.max(3.0F, (float) Math.sqrt(toProcess.size()) / 2.0F));
+            for (ItemStack stack : state.getDrops(builder)) {
+              if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, false)); }
+            }
+          }
+        }
+
+        float visualChance = BlastPlasterUtil.getVisualSpawnChance(isCreeper, false);
+        BlastPlasterUtil.finalizeExplodedBlock(serverLevel, pos, state, effectiveMode, false, visualChance);
+      }
+
+      if (!pendingRealDrops.isEmpty()) {
+        int nextTick = serverLevel.getServer().getTickCount() + 2;
+        serverLevel.getServer().tell(new TickTask(nextTick, () -> {
+          for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
+            ItemEntity item = new ItemEntity(serverLevel, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
+            BlastPlasterUtil.markSuppressionBypass(item);
+            if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, serverLevel); }
+            else { BlastPlasterUtil.applyTossVelocity(item, serverLevel); }
+            serverLevel.addFreshEntity(item);
+          }
+        }));
+      }
+
+      if (Config.enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
+    }
+
+    if (eoSnapshot != null && !eoSnapshot.isEmpty()) {
+      if (effectiveMode == ExplosionMode.HEAL) {
+        for (BlockStatePosWrapper wrapper : toProcess) { eoSnapshot.putIfAbsent(wrapper.getPos(), wrapper); }
+      } else {
+        for (BlockStatePosWrapper wrapper : toProcess) { eoSnapshot.remove(wrapper.getPos()); }
+        eoSnapshot.keySet().removeAll(affectedPos);
+      }
+      if (eoSnapshot.isEmpty()) { return; }
+      if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, eoSnapshot.keySet(), effectiveMode == ExplosionMode.HEAL); }
+      int passes = Math.min(60, 9 + eoSnapshot.size() / 1500);
+      RegionSnapshotHealer.scheduleDiffHeal(serverLevel, eoSnapshot, 5, 20, passes, effectiveMode, BlastPlasterUtil.getVisualSpawnChance(isCreeper, false));
+      BlastPlaster.LOGGER.debug("[BlastPlaster] EO crater watch: {} blocks tracked (mode {}), {} passes", eoSnapshot.size(), effectiveMode, passes);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<BlockPos, BlockStatePosWrapper> buildEoSnapshot(ServerLevel serverLevel, Explosion explosion, Vec3 center, long currentTick) {
+    pendingEoRegions.removeIf(r -> r.expireTick() < currentTick);
+    for (PendingEoRegion region : pendingEoRegions) {
+      if (region.box().contains(center)) { return null; }
+    }
+
+    Set<BlockPos> seeds;
+    try {
+      float basePower = 4.0F;
+      Object power = eoGetPowerMethod.invoke(explosion);
+      if (power instanceof Float f) { basePower = f; }
+      float clusteredPower = (float) eoClusterMethod.invoke(null, serverLevel, center, basePower);
+      seeds = (Set<BlockPos>) eoCraterMethod.invoke(null, serverLevel, center, clusteredPower);
+    } catch (Exception e) {
+      BlastPlaster.LOGGER.warn("[BlastPlaster] EO crater estimation failed, EO crater tracking skipped for this explosion", e);
+      return null;
+    }
+
+    if (seeds == null || seeds.isEmpty()) { return null; }
+
+    int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+    int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+    for (BlockPos pos : seeds) {
+      minX = Math.min(minX, pos.getX());
+      minY = Math.min(minY, pos.getY());
+      minZ = Math.min(minZ, pos.getZ());
+      maxX = Math.max(maxX, pos.getX());
+      maxY = Math.max(maxY, pos.getY());
+      maxZ = Math.max(maxZ, pos.getZ());
+    }
+
+    int craterSpan = Math.max(maxX - minX, maxZ - minZ);
+    int lateralMargin = Mth.clamp(craterSpan / 4, 6, 16);
+    int topMargin = Mth.clamp(craterSpan / 2, 16, 32);
+    int bottomMargin = 4;
+
+    minX -= lateralMargin; minZ -= lateralMargin; maxX += lateralMargin; maxZ += lateralMargin;
+    minY = Mth.clamp(minY - bottomMargin, serverLevel.getMinBuildHeight(), serverLevel.getMaxBuildHeight() - 1);
+    maxY = Mth.clamp(maxY + topMargin, serverLevel.getMinBuildHeight(), serverLevel.getMaxBuildHeight() - 1);
+
+    long volume = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (volume > MAX_SNAPSHOT_VOLUME) {
+      BlastPlaster.LOGGER.warn("[BlastPlaster] EO explosion region too large to snapshot ({} blocks), EO crater tracking skipped", volume);
+      return null;
+    }
+
+    Map<BlockPos, BlockStatePosWrapper> snapshot = new HashMap<>();
+    BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+    for (int x = minX; x <= maxX; x++) {
+      for (int y = minY; y <= maxY; y++) {
+        for (int z = minZ; z <= maxZ; z++) {
+          cursor.set(x, y, z);
+          BlockState state = serverLevel.getBlockState(cursor);
+          if (state.isAir()) { continue; }
+          if (state.getBlock() == Blocks.TNT) { continue; }
+          BlockPos immutable = cursor.immutable();
+          snapshot.put(immutable, new BlockStatePosWrapper(serverLevel, immutable, state));
+        }
       }
     }
+
+    if (snapshot.isEmpty()) { return null; }
+    pendingEoRegions.add(new PendingEoRegion(new AABB(minX, minY, minZ, maxX + 1, maxY + 1, maxZ + 1), currentTick + 200L));
+    return snapshot;
   }
 
   @SubscribeEvent public void onEntityJoinLevel(EntityJoinLevelEvent event) {
@@ -302,6 +360,20 @@ public class ExplosionEventHandler {
 
     if (event.getEntity() instanceof ItemEntity item) {
       if (BlastPlasterUtil.shouldSuppressItemDrop(item)) {
+        event.setCanceled(true);
+      }
+      return;
+    }
+
+    if (event.getEntity() instanceof FallingBlockEntity falling) {
+      if (BlastPlasterUtil.shouldSuppressFallingBlock(falling)) {
+        event.setCanceled(true);
+      }
+      return;
+    }
+
+    if (dtFallingTreeClass != null && dtFallingTreeClass.isInstance(event.getEntity())) {
+      if (event.getLevel() instanceof ServerLevel serverLevel && BlastPlasterUtil.shouldSuppressLaunchAt(serverLevel, event.getEntity().position())) {
         event.setCanceled(true);
       }
     }

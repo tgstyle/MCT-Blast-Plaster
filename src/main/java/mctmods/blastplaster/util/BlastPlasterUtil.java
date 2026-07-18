@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -16,14 +17,17 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
-
 import com.ferreusveritas.dynamictrees.api.TreeHelper;
-
+import com.ferreusveritas.dynamictrees.block.FruitBlock;
+import com.ferreusveritas.dynamictrees.block.PodBlock;
+import com.ferreusveritas.dynamictrees.block.branch.SurfaceRootBlock;
+import com.ferreusveritas.dynamictrees.block.branch.TrunkShellBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -33,12 +37,17 @@ public class BlastPlasterUtil {
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
     public static final float CREEPER_VISUAL_CHANCE = 0.25f;
     public static final float ALEXSCAVES_NUKE_VISUAL_CHANCE = 0.01f;
+    public static final int FALLING_BLOCK_SUPPRESS_TICKS = 25;
+    public static final String BYPASS_TAG = "BlastPlasterBypass";
+    public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
+    public static final boolean EO_LOADED = ModList.get().isLoaded("explosionoverhaul");
+    public static final boolean AC_LOADED = ModList.get().isLoaded("alexscaves");
 
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
 
     private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
 
-    private record ExplosionArea(AABB box, long expireTick) {}
+    private record ExplosionArea(AABB box, long expireTick, long fallingExpireTick) {}
 
     static {
         for (int x = -1; x <= 1; x++) {
@@ -56,7 +65,9 @@ public class BlastPlasterUtil {
         return DEFAULT_VISUAL_CHANCE;
     }
 
-    public static void recordExplosionArea(ServerLevel level, Set<BlockPos> positions) {
+    public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
+
+    public static void recordExplosionArea(ServerLevel level, Set<BlockPos> positions, boolean suppressFallingBlocks) {
         if (positions.isEmpty()) { return; }
 
         double minX = Double.MAX_VALUE;
@@ -76,14 +87,15 @@ public class BlastPlasterUtil {
         }
 
         AABB box = new AABB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
-        long expire = level.getGameTime() + 200L;
+        long now = level.getGameTime();
 
-        recentExplosions.add(new ExplosionArea(box, expire));
-        recentExplosions.removeIf(area -> area.expireTick < level.getGameTime());
+        recentExplosions.add(new ExplosionArea(box, now + 200L, suppressFallingBlocks ? now + FALLING_BLOCK_SUPPRESS_TICKS : 0L));
+        recentExplosions.removeIf(area -> area.expireTick < now);
     }
 
     @SuppressWarnings("resource")
     public static boolean shouldSuppressItemDrop(ItemEntity item) {
+        if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
         Level rawLevel = item.level();
         if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
 
@@ -97,6 +109,25 @@ public class BlastPlasterUtil {
             }
         }
         return false;
+    }
+
+    public static boolean shouldSuppressLaunchAt(ServerLevel level, Vec3 pos) {
+        long now = level.getGameTime();
+        recentExplosions.removeIf(area -> area.expireTick < now);
+
+        for (ExplosionArea area : recentExplosions) {
+            if (area.fallingExpireTick >= now && area.box.contains(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @SuppressWarnings("resource")
+    public static boolean shouldSuppressFallingBlock(FallingBlockEntity falling) {
+        Level rawLevel = falling.level();
+        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+        return shouldSuppressLaunchAt(serverLevel, falling.position());
     }
 
     private static void addVerticalInDirection(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType, boolean upward) {
@@ -138,8 +169,21 @@ public class BlastPlasterUtil {
     public record PendingDrop(Vec3 pos, ItemStack stack, boolean isGentle) {}
 
     public static boolean isDynamicTrees(BlockState state) {
-        if (!ModList.get().isLoaded("dynamictrees")) { return false; }
+        if (!DT_LOADED) { return false; }
         return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state);
+    }
+
+    public static boolean isDynamicTreesAssembly(BlockState state) {
+        if (!DT_LOADED) { return false; }
+        Block block = state.getBlock();
+        return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state)
+                || block instanceof TrunkShellBlock || block instanceof SurfaceRootBlock || block instanceof FruitBlock || block instanceof PodBlock;
+    }
+
+    public static boolean isDtWood(BlockState state) {
+        if (!DT_LOADED) { return false; }
+        Block block = state.getBlock();
+        return TreeHelper.isBranch(state) || TreeHelper.isRooty(state) || block instanceof TrunkShellBlock || block instanceof SurfaceRootBlock;
     }
 
     public static int getDTRadius(BlockState state) {
@@ -148,6 +192,7 @@ public class BlastPlasterUtil {
     }
 
     public static List<ItemStack> generateDynamicTreesDrops(ServerLevel level, BlockState state) {
+        if (!DT_LOADED) { return new ArrayList<>(); }
         int radius = getDTRadius(state);
         List<ItemStack> drops = new ArrayList<>();
 
@@ -181,6 +226,25 @@ public class BlastPlasterUtil {
         Vec3 center = Vec3.atCenterOf(pos);
         for (ItemStack stack : drops) {
             ItemEntity item = new ItemEntity(level, center.x, center.y + 0.5, center.z, stack);
+            markSuppressionBypass(item);
+            applyTossVelocity(item, level);
+            level.addFreshEntity(item);
+        }
+    }
+
+    public static void spawnEjectDrops(ServerLevel level, BlockPos pos, BlockState state) {
+        if (isDynamicTrees(state) && Config.dtSpecialDrops()) {
+            spawnDynamicTreesDrops(level, pos, state);
+            return;
+        }
+        LootParams.Builder builder = new LootParams.Builder(level)
+                .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
+                .withParameter(LootContextParams.EXPLOSION_RADIUS, 4.0F);
+        for (ItemStack stack : state.getDrops(builder)) {
+            if (stack.isEmpty()) { continue; }
+            ItemEntity item = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
+            markSuppressionBypass(item);
             applyTossVelocity(item, level);
             level.addFreshEntity(item);
         }
@@ -191,6 +255,7 @@ public class BlastPlasterUtil {
         ItemEntity visual = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
         visual.setPickUpDelay(32767);
         visual.lifespan = 60;
+        markSuppressionBypass(visual);
         applyTossVelocity(visual, level);
         level.addFreshEntity(visual);
     }
