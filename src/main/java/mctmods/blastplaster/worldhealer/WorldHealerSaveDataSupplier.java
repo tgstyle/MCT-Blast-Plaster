@@ -213,7 +213,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : blocks) {
       int y = wrapper.getPos().getY();
-      layers.computeIfAbsent(y, k -> new ArrayList<>()).add(wrapper);
+      layers.computeIfAbsent(y, ignored -> new ArrayList<>()).add(wrapper);
     }
     int currentDelay = baseDelay;
     int var = Config.getRandomTickVar();
@@ -884,7 +884,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
   private boolean isHollowStructure(Set<BlockPos> allLogs) {
     Map<Integer, List<BlockPos>> logsByY = new HashMap<>();
-    for (BlockPos p : allLogs) { logsByY.computeIfAbsent(p.getY(), k -> new ArrayList<>()).add(p); }
+    for (BlockPos p : allLogs) { logsByY.computeIfAbsent(p.getY(), ignored -> new ArrayList<>()).add(p); }
 
     for (List<BlockPos> slice : logsByY.values()) {
       if (slice.size() < 9) { continue; }
