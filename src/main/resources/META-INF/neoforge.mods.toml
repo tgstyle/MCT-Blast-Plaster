@@ -28,7 +28,7 @@ side="BOTH"
 
 [[dependencies.blastplaster]]
 modId="dynamictrees"
-mandatory=false
+type = "optional"
 versionRange="[${version_dynamictrees_min},)"
 ordering="AFTER"
 side="BOTH"
