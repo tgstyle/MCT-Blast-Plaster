@@ -1,7 +1,7 @@
 # Links
 - [Official Discord](https://discord.gg/ujY2mV9)<br/>
 
-- [MCT Blast Plaster on CurseForge](https://www.curseforge.com/minecraft/mc-mods/mct-immersive-technology)<br/>
+- [MCT Blast Plaster on CurseForge](https://www.curseforge.com/minecraft/mc-mods/mct-blast-plaster)<br/>
 - [MCT Blast Plaster on Modrinth](https://modrinth.com/mod/blast-plaster)<br/>
 
 # MCT Blast Plaster

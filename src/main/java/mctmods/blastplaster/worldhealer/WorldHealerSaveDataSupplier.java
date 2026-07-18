@@ -170,7 +170,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
 
     if (!flora.isEmpty()) {
       flora.sort((a, b) -> Integer.compare(b.getPos().getY(), a.getPos().getY()));
-      int floraStep = Math.max(1, Math.min(8, 160 / flora.size()));
+      int floraStep = Math.clamp(160 / flora.size(), 1, 8);
       int floraDelay = floraTick;
       for (BlockStatePosWrapper f : flora) {
         healTask.enqueue(floraDelay, f);
@@ -185,7 +185,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     if (!vines.isEmpty()) {
       vines.sort((a, b) -> Integer.compare(b.getPos().getY(), a.getPos().getY()));
       int vineDelay = leavesTick + 80;
-      int vineStep = Math.max(1, Math.min(12, 240 / vines.size()));
+      int vineStep = Math.clamp(240 / vines.size(), 1, 12);
       for (BlockStatePosWrapper vine : vines) {
         healTask.enqueue(vineDelay, vine);
         vineDelay += vineStep;
@@ -201,7 +201,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
 
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : blocks) {
-      layers.computeIfAbsent(wrapper.getPos().getY(), k -> new ArrayList<>()).add(wrapper);
+      layers.computeIfAbsent(wrapper.getPos().getY(), ignored -> new ArrayList<>()).add(wrapper);
     }
 
     int var = Config.getRandomTickVar();
@@ -421,7 +421,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     }
     if (restored > 0) {
       dirtyFlag = true;
-      BlastPlaster.LOGGER.info("[BlastPlaster] Restored heal queue: {} blocks resuming over {} ticks for {}", restored, Math.max(1, cumulative - Math.max(0, leadOffset)), level.dimension().location());
+      BlastPlaster.LOGGER.info("[BlastPlaster] Restored heal queue: {} blocks resuming over {} ticks for {}", restored, Math.max(1, cumulative - leadOffset), level.dimension().location());
     }
   }
 
