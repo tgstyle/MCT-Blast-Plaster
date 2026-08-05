@@ -1,359 +1,379 @@
 package mctmods.blastplaster;
 
-import com.electronwill.nightconfig.core.file.CommentedFileConfig;
-import com.electronwill.nightconfig.core.io.WritingMode;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraftforge.common.ForgeConfigSpec;
-import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
-import net.minecraftforge.common.ForgeConfigSpec.ConfigValue;
-import net.minecraftforge.common.ForgeConfigSpec.EnumValue;
-import net.minecraftforge.common.ForgeConfigSpec.IntValue;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.registries.ForgeRegistries;
-
+import net.minecraft.block.Block;
+import net.minecraft.block.properties.IProperty;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.IStringSerializable;
+import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
+import net.minecraftforge.oredict.OreDictionary;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
 
 public class Config {
 
-  public enum ExplosionMode {
-    HEAL,
-    EJECT_DROPS,
-    VISUAL_TOSS
-  }
+    public enum ExplosionMode { HEAL, EJECT_DROPS, VISUAL_TOSS }
 
-  private static final ForgeConfigSpec SPEC;
+    private static final String CAT_EXPLOSION = "explosion";
+    private static final String CAT_HEALING = "healing";
+    private static final String CAT_SOURCES = "explosion_sources";
+    private static final String CAT_EJECT = "eject_drops";
+    private static final String CAT_MOB_DROPS = "mob_drops";
+    private static final String CAT_TREES = "trees";
+    private static final Map<String, String> TREE_MAP = new HashMap<>();
+    private static final Map<IBlockState, String> LOG_KEY_CACHE = new IdentityHashMap<>();
+    private static final Map<IBlockState, String> LEAF_KEY_CACHE = new IdentityHashMap<>();
+    private static final String NO_KEY = "";
+    private static final Set<String> LOG_KEYS = new HashSet<>();
+    private static final Set<String> LEAF_KEYS = new HashSet<>();
+    private static final List<String> CUSTOM_ENTITIES = new ArrayList<>();
+    private static String[] treeLogLeafPairs = new String[0];
+    private static ExplosionMode explosionMode = ExplosionMode.HEAL;
+    private static boolean enableFakeTossedBlocks;
+    private static boolean enableExplosionFlash;
+    private static int explosionFlashDuration;
+    private static int explosionFlashLightLevel;
+    private static int explosionFlashParticleCount;
+    private static int explosionFlashPulses;
+    private static boolean enableExplosionSmoke;
+    private static int explosionSmokeDuration;
+    private static int explosionSmokeParticleCount;
+    private static boolean playerTNTAlwaysDrops;
+    private static boolean playerTNTDropFullBlocks;
+    private static int minTicksBeforeHeal;
+    private static int randomTickVar;
+    private static boolean overrideBlocks;
+    private static boolean healFullTrees;
+    private static boolean healCreepers;
+    private static boolean healNonPlayerTNT;
+    private static boolean healWither;
+    private static boolean healAll;
+    private static boolean processPlayerIgnitedTNT;
+    private static boolean dtSpecialDrops;
+    private static boolean enableDropSuppression;
+    private static boolean preventMobDrops;
+    private static int maxTreeSize;
+    private static boolean debugLogging;
+    private static boolean treeMapBuilt;
 
-  private static final EnumValue<ExplosionMode> EXPLOSION_MODE;
-  private static final BooleanValue ENABLE_FAKE_TOSSED_BLOCKS;
-  private static final BooleanValue ENABLE_EXPLOSION_FLASH;
-  private static final IntValue EXPLOSION_FLASH_DURATION;
-  private static final IntValue EXPLOSION_FLASH_LIGHT_LEVEL;
-  private static final IntValue EXPLOSION_FLASH_PARTICLE_COUNT;
-  private static final IntValue EXPLOSION_FLASH_PULSES;
-  private static final BooleanValue ENABLE_EXPLOSION_SMOKE;
-  private static final IntValue EXPLOSION_SMOKE_DURATION;
-  private static final IntValue EXPLOSION_SMOKE_PARTICLE_COUNT;
-  private static final BooleanValue PLAYER_TNT_ALWAYS_DROPS;
-  private static final BooleanValue PLAYER_TNT_DROP_FULL_BLOCKS;
+    private Config() {}
 
-  private static final IntValue MIN_TICKS_BEFORE_HEAL;
-  private static final IntValue RANDOM_TICK_VAR;
-  private static final BooleanValue OVERRIDE_BLOCKS;
-  private static final BooleanValue DEBUG_LOGGING;
-  private static final BooleanValue HEAL_FULL_TREES;
+    public static void syncConfig() {
+        Configuration config = BlastPlaster.config;
+        try {
+            config.load();
 
-  private static final BooleanValue HEAL_CREEPERS;
-  private static final BooleanValue HEAL_NONPLAYER_TNT;
-  private static final BooleanValue HEAL_WITHER;
-  private static final BooleanValue HEAL_ALL;
-  private static final BooleanValue PROCESS_PLAYER_IGNITED_TNT;
-  private static final ConfigValue<List<? extends String>> CUSTOM_ENTITIES_TO_HEAL;
+            config.setCategoryComment(CAT_EXPLOSION, "Explosion mode and visuals");
+            Property modeProperty = config.get(CAT_EXPLOSION, "ExplosionMode", ExplosionMode.HEAL.name(),
+                    "HEAL (default): blocks disappear then slowly restore + fake tossed blocks fly out\n"
+                            + "EJECT_DROPS: blocks gone forever, real drops with 1/3 chance per block (exactly matching vanilla creeper), otherwise fake tossed block instead (fakes exactly make up the remaining ~2/3, 100% visual coverage)\n"
+                            + "VISUAL_TOSS: blocks gone forever, only fake tossed blocks fly out (no real drops, no restore)");
+            modeProperty.setValidValues(modeNames());
+            explosionMode = parseMode(modeProperty.getString());
+            enableFakeTossedBlocks = config.get(CAT_EXPLOSION, "EnableFakeTossedBlocks", true,
+                    "Spawn visible 3D fake block entities that fly out and despawn after ~3 seconds (no pickup, no placement). In EJECT_DROPS mode these exactly fill the blocks that do NOT drop real items. Ignored in modes where not applicable.").getBoolean();
+            enableExplosionFlash = config.get(CAT_EXPLOSION, "EnableExplosionFlash", true,
+                    "Enable temporary light source flash at explosion center (light block + many bright flash particles) for realism - visible even in full daylight.").getBoolean();
+            explosionFlashDuration = config.get(CAT_EXPLOSION, "ExplosionFlashDuration", 28,
+                    "Server ticks the flash light block remains visible (placed AFTER blocks are cleared to AIR; 4-12 recommended).", 1, 40).getInt();
+            explosionFlashLightLevel = config.get(CAT_EXPLOSION, "ExplosionFlashLightLevel", 15,
+                    "Light level of the flash (0-15).", 0, 15).getInt();
+            explosionFlashParticleCount = config.get(CAT_EXPLOSION, "ExplosionFlashParticleCount", 240,
+                    "Number of bright flash particles for explosion visual flash (higher values = stronger camera-flash pop that overpowers ambient light on surrounding blocks).", 20, 600).getInt();
+            explosionFlashPulses = config.get(CAT_EXPLOSION, "ExplosionFlashPulses", 4,
+                    "Number of staggered flash particle bursts (1 = single burst, 4 = dramatic camera-flash strobe/overexposure that cuts through torches/ambient light).", 1, 6).getInt();
+            enableExplosionSmoke = config.get(CAT_EXPLOSION, "EnableExplosionSmoke", true,
+                    "Enable large poof of smoke rising from explosion center (lingering realistic smoke cloud visible in ALL modes, even daylight).").getBoolean();
+            explosionSmokeDuration = config.get(CAT_EXPLOSION, "ExplosionSmokeDuration", 200,
+                    "Total server ticks the smoke poof effect continues (200 ticks = 10 seconds; bursts every 15 ticks).", 40, 1200).getInt();
+            explosionSmokeParticleCount = config.get(CAT_EXPLOSION, "ExplosionSmokeParticleCount", 1,
+                    "Smoke particles per burst (first burst doubled for initial outward poof; total ~15 particles over 10s at default; higher = thicker rising column).", 1, 10).getInt();
+            playerTNTAlwaysDrops = config.get(CAT_EXPLOSION, "PlayerTNTAlwaysDrops", true,
+                    "If true (default), player-ignited TNT explosions ALWAYS use EJECT_DROPS behavior (real item drops + permanent removal) regardless of global ExplosionMode. Set false to respect the selected global mode. NOTE: Requires ProcessPlayerIgnitedTNT=true to have any effect.").getBoolean();
+            playerTNTDropFullBlocks = config.get(CAT_EXPLOSION, "PlayerTNTDropFullBlocks", false,
+                    "If true, player-ignited TNT drops the full block item (silk-touch like). Only applies when PlayerTNTAlwaysDrops=true and effective mode is EJECT_DROPS. DT blocks prioritize DynamicTreesSpecialDrops if enabled.").getBoolean();
 
-  private static final BooleanValue ENABLE_ALEXSCAVES_NUKES;
-  private static final BooleanValue ENABLE_EXPLOSION_OVERHAUL;
+            config.setCategoryComment(CAT_HEALING, "Healing settings (HEAL mode only)");
+            minTicksBeforeHeal = config.get(CAT_HEALING, "TickStartDelay", 600,
+                    "Minimum ticks before healing begins after explosion. Only used in HEAL mode.", 1, 600000).getInt();
+            randomTickVar = config.get(CAT_HEALING, "TickRandomInterval", 200,
+                    "Random extra ticks added per healing layer. Only used in HEAL mode.", 1, 600000).getInt();
+            overrideBlocks = config.get(CAT_HEALING, "OverrideBlocks", true,
+                    "Replace any block (including fluids) when healing.").getBoolean();
+            healFullTrees = config.get(CAT_HEALING, "HealFullTrees", true,
+                    "When a tree is partially exploded, heal the entire tree. Enables tree expansion logic.").getBoolean();
 
-  private static final BooleanValue DT_SPECIAL_DROPS;
-  private static final ConfigValue<List<? extends String>> DT_LOG_MAPPINGS;
+            config.setCategoryComment(CAT_SOURCES, "Which explosions to process");
+            healCreepers = config.get(CAT_SOURCES, "HealCreepers", true,
+                    "Process creeper explosions according to selected mode.").getBoolean();
+            healNonPlayerTNT = config.get(CAT_SOURCES, "HealNonPlayerTNT", true,
+                    "Process TNT explosions not ignited by players according to selected mode.").getBoolean();
+            healWither = config.get(CAT_SOURCES, "HealWither", true,
+                    "Process wither explosions according to selected mode.").getBoolean();
+            healAll = config.get(CAT_SOURCES, "HealAll", false,
+                    "Process EVERY explosion regardless of source (overrides all specific options above).").getBoolean();
+            processPlayerIgnitedTNT = config.get(CAT_SOURCES, "ProcessPlayerIgnitedTNT", true,
+                    "If true (default), player-ignited TNT explosions are processed (subject to PlayerTNTAlwaysDrops). Set false to completely ignore player TNT like vanilla.").getBoolean();
+            CUSTOM_ENTITIES.clear();
+            CUSTOM_ENTITIES.addAll(Arrays.asList(config.get(CAT_SOURCES, "CustomEntitiesToHeal", new String[0],
+                    "Extra entity IDs (modid:entity) whose explosions should be processed.").getStringList()));
 
-  private static final ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
-  private static final IntValue MAX_TREE_SIZE;
+            config.setCategoryComment(CAT_EJECT, "EJECT_DROPS settings");
+            dtSpecialDrops = config.get(CAT_EJECT, "DynamicTreesSpecialDrops", true,
+                    "For Dynamic Trees blocks in EJECT_DROPS mode: drop the tree's primitive log + sticks instead of full DT items. Applies to all EJECT_DROPS including player TNT (overrides full blocks intent for DT).").getBoolean();
+            enableDropSuppression = config.get(CAT_EJECT, "EnableDropSuppression", true,
+                    "Prevents ANY stray item entities (seeds, sticks, vines, etc.) from ever spawning in HEAL or VISUAL_TOSS modes by cancelling them the instant they try to join the world. This is the core safety system for non-EJECT modes (no late scavenging anymore). Default true.").getBoolean();
 
-  private static final BooleanValue ENABLE_DROP_SUPPRESSION;
-  private static final BooleanValue PREVENT_MOB_DROPS;
+            config.setCategoryComment(CAT_MOB_DROPS, "Mob drops");
+            preventMobDrops = config.get(CAT_MOB_DROPS, "PreventMobDrops", false,
+                    "If true, prevent ALL drops from mobs/entities killed by ANY explosion (in every mode). Vanilla drops are cancelled. Default false (allow drops - they are automatically protected from suppression so they survive in HEAL/VISUAL_TOSS modes).").getBoolean();
 
-  private static final Map<TagKey<Block>, Block> TREE_MAP = new HashMap<>();
-  private static final Map<String, Block> DT_LOG_MAP = new HashMap<>();
+            config.setCategoryComment(CAT_TREES, "Tree and misc helpers");
+            treeLogLeafPairs = config.get(CAT_TREES, "TreeLogLeafPairs", new String[0],
+                    "Custom tree log<->leaf pairings for full tree healing.\n"
+                            + "Format: modid:log_block:meta=modid:leaf_block:meta (meta defaults to 0 when omitted)\n"
+                            + "Only needed for trees that the ore dictionary scan cannot pair by name.").getStringList();
+            maxTreeSize = config.get(CAT_TREES, "MaxTreeSize", 20000,
+                    "Max blocks allowed in a tree for full healing (prevents lag). Large old-growth jungle trees often exceed 7500 blocks; set higher if you see warnings.", 0, 50000).getInt();
 
-  private static final List<String> DT_SUFFIXES = Arrays.asList("_branch", "_leaves", "_root", "_surface_root", "_fancy_branch", "_cactus", "_bark", "_fruited");
+            debugLogging = config.get(Configuration.CATEGORY_GENERAL, "EnableDebugLogging", false,
+                    "If true, BlastPlaster prints detailed heal scheduling and batch telemetry to the log.").getBoolean();
 
-  static {
-    final ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
-    builder.push(BlastPlaster.MODID);
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  EXPLOSION MODE & VISUALS",
-            "================================================================");
-    builder.push("explosion");
-    EXPLOSION_MODE = builder.comment("HEAL (default): blocks disappear then slowly restore + fake tossed blocks fly out",
-                    "EJECT_DROPS: blocks gone forever, real drops with 1/3 chance per block (exactly matching vanilla creeper), otherwise fake tossed block instead (fakes exactly make up the remaining ~2/3, 100% visual coverage)",
-                    "VISUAL_TOSS: blocks gone forever, only fake tossed blocks fly out (no real drops, no restore)")
-            .defineEnum("ExplosionMode", ExplosionMode.HEAL);
-
-    ENABLE_FAKE_TOSSED_BLOCKS = builder.comment("Spawn visible 3D fake block entities that fly out and despawn after ~3 seconds (no pickup, no placement). In EJECT_DROPS mode these exactly fill the blocks that do NOT drop real items. Ignored in modes where not applicable.")
-            .define("EnableFakeTossedBlocks", true);
-
-    ENABLE_EXPLOSION_FLASH = builder.comment("Enable temporary light source flash at explosion center (LightBlock + many bright FLASH particles) for realism - visible even in full daylight.")
-            .define("EnableExplosionFlash", true);
-    EXPLOSION_FLASH_DURATION = builder.comment("Server ticks the flash LightBlock remains visible (placed AFTER blocks are cleared to AIR; 4-12 recommended).")
-            .defineInRange("ExplosionFlashDuration", 28, 1, 40);
-    EXPLOSION_FLASH_LIGHT_LEVEL = builder.comment("Light level of the flash (0-15).")
-            .defineInRange("ExplosionFlashLightLevel", 15, 0, 15);
-    EXPLOSION_FLASH_PARTICLE_COUNT = builder.comment("Number of bright FLASH particles for explosion visual flash (higher values = stronger camera-flash pop that overpowers ambient light on surrounding blocks).")
-            .defineInRange("ExplosionFlashParticleCount", 240, 20, 600);
-    EXPLOSION_FLASH_PULSES = builder.comment("Number of staggered FLASH particle bursts (1 = single burst, 4 = dramatic camera-flash strobe/overexposure that cuts through torches/ambient light).")
-            .defineInRange("ExplosionFlashPulses", 4, 1, 6);
-
-    ENABLE_EXPLOSION_SMOKE = builder.comment("Enable large poof of campfire smoke rising from explosion center (lingering realistic smoke cloud visible in ALL modes, even daylight).")
-            .define("EnableExplosionSmoke", true);
-    EXPLOSION_SMOKE_DURATION = builder.comment("Total server ticks the smoke poof effect continues (200 ticks = 10 seconds; bursts every 15 ticks).")
-            .defineInRange("ExplosionSmokeDuration", 200, 40, 1200);
-    EXPLOSION_SMOKE_PARTICLE_COUNT = builder.comment("CAMPFIRE_SIGNAL_SMOKE particles per burst (first burst doubled for initial outward poof; total ~15 particles over 10s at default; higher = thicker rising column).")
-            .defineInRange("ExplosionSmokeParticleCount", 1, 1, 10);
-
-    PLAYER_TNT_ALWAYS_DROPS = builder.comment("If true (default), player-ignited TNT explosions ALWAYS use EJECT_DROPS behavior (real item drops + permanent removal) regardless of global ExplosionMode. Set false to respect the selected global mode. NOTE: Requires ProcessPlayerIgnitedTNT=true to have any effect.")
-            .define("PlayerTNTAlwaysDrops", true);
-    PLAYER_TNT_DROP_FULL_BLOCKS = builder.comment("If true, player-ignited TNT drops the full block item (silk-touch like). Only applies when PlayerTNTAlwaysDrops=true and effective mode is EJECT_DROPS. DT blocks prioritize DT_SPECIAL_DROPS if enabled.")
-            .define("PlayerTNTDropFullBlocks", false);
-    builder.pop();
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  HEALING SETTINGS (HEAL mode only)",
-            "================================================================");
-    builder.push("healing");
-    MIN_TICKS_BEFORE_HEAL = builder.comment("Minimum ticks before healing begins after explosion. Only used in HEAL mode.")
-            .defineInRange("TickStartDelay", 600, 1, 600000);
-    RANDOM_TICK_VAR = builder.comment("Random extra ticks added per healing layer. Only used in HEAL mode.")
-            .defineInRange("TickRandomInterval", 200, 1, 600000);
-    OVERRIDE_BLOCKS = builder.comment("Replace any block (including fluids) when healing.")
-            .define("OverrideBlocks", true);
-    HEAL_FULL_TREES = builder.comment("When a tree is partially exploded, heal the entire tree. Enables tree expansion logic.")
-            .define("HealFullTrees", true);
-    builder.pop();
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  WHICH EXPLOSIONS TO PROCESS",
-            "================================================================");
-    builder.push("explosion_sources");
-    HEAL_CREEPERS = builder.comment("Process creeper explosions according to selected mode.")
-            .define("HealCreepers", true);
-    HEAL_NONPLAYER_TNT = builder.comment("Process TNT explosions not ignited by players according to selected mode.")
-            .define("HealNonPlayerTNT", true);
-    HEAL_WITHER = builder.comment("Process wither explosions according to selected mode.")
-            .define("HealWither", true);
-    HEAL_ALL = builder.comment("Process EVERY explosion regardless of source (overrides all specific options above).")
-            .define("HealAll", false);
-    PROCESS_PLAYER_IGNITED_TNT = builder.comment("If true (default), player-ignited TNT explosions are processed (subject to PlayerTNTAlwaysDrops). Set false to completely ignore player TNT like vanilla.")
-            .define("ProcessPlayerIgnitedTNT", true);
-    CUSTOM_ENTITIES_TO_HEAL = builder.comment("Extra entity IDs (modid:entity) whose explosions should be processed.")
-            .defineListAllowEmpty("CustomEntitiesToHeal", List.of("undeadnights:demolition_zombie"), s -> s instanceof String);
-    builder.pop();
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  COMPATIBILITY",
-            "================================================================");
-    builder.push("compatibility");
-    ENABLE_ALEXSCAVES_NUKES = builder.comment("If true and Alex's Caves is loaded, nucleeeper explosions are processed according to selected mode (treated as non-player TNT).")
-            .define("EnableAlexsCavesNukes", true);
-    ENABLE_EXPLOSION_OVERHAUL = builder.comment("If true and Explosion Overhaul is loaded, all EO explosions (including clustered 4+ TNT and custom crater generation) are processed according to selected mode (treated as non-player TNT).")
-            .define("EnableExplosionOverhaul", true);
-    builder.pop();
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  EJECT_DROPS SETTINGS",
-            "================================================================");
-    builder.push("eject_drops");
-    DT_SPECIAL_DROPS = builder.comment("For Dynamic Trees blocks in EJECT_DROPS mode: drop simple logs + sticks instead of full DT items. Applies to all EJECT_DROPS including player TNT (overrides full blocks intent for DT).")
-            .define("DynamicTreesSpecialDrops", true);
-    DT_LOG_MAPPINGS = builder.comment("Mappings for Dynamic Trees blocks → vanilla log dropped in EJECT_DROPS mode.",
-                    "Format: dynamictrees:tree_type=modid:log_block",
-                    "Add your own for modded DT trees. Unknown trees fall back to oak_log.")
-            .defineListAllowEmpty("DynamicTreesLogMappings",
-                    List.of(
-                            "dynamictrees:oak=oak_log",
-                            "dynamictrees:spruce=spruce_log",
-                            "dynamictrees:birch=birch_log",
-                            "dynamictrees:jungle=jungle_log",
-                            "dynamictrees:acacia=acacia_log",
-                            "dynamictrees:dark_oak=dark_oak_log",
-                            "dynamictrees:mangrove=mangrove_log",
-                            "dynamictrees:cherry=cherry_log",
-                            "dynamictrees:bamboo=bamboo",
-                            "dynamictrees:azalea=oak_log"
-                    ),
-                    s -> s instanceof String);
-    ENABLE_DROP_SUPPRESSION = builder.comment("Prevents ANY stray ItemEntities (seeds, sticks, bamboo, vines, etc.) from ever spawning in HEAL or VISUAL_TOSS modes by cancelling them the instant they try to join the world. This is the core safety system for non-EJECT modes (no late scavenging anymore). Default true.")
-            .define("EnableDropSuppression", true);
-    builder.pop();
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  MOB DROPS",
-            "================================================================");
-    builder.push("mob_drops");
-    PREVENT_MOB_DROPS = builder.comment("If true, prevent ALL drops from mobs/entities killed by ANY explosion (in every mode). Vanilla drops are cancelled. Default false (allow drops - they are automatically protected from suppression so they survive in HEAL/VISUAL_TOSS modes).")
-            .define("PreventMobDrops", false);
-    builder.pop();
-
-    builder.comment(
-            "",
-            "================================================================",
-            "  TREE & MISC HELPERS",
-            "================================================================");
-    builder.push("trees");
-    TREE_LOG_LEAF_PAIRS = builder.comment("Custom tree log<->leaf pairings for full tree healing.",
-                    "Format: modid:log_tag=modid:leaf_block (only needed for unusual trees)")
-            .defineListAllowEmpty("TreeLogLeafPairs", List.of(), s -> s instanceof String);
-    MAX_TREE_SIZE = builder.comment("Max blocks allowed in a tree for full healing (prevents lag). Large old-growth jungle trees often exceed 7500 blocks; Alex's Caves nukes hit massive areas - set higher if you see warnings.")
-            .defineInRange("MaxTreeSize", 20000, 0, 50000);
-    builder.pop();
-    DEBUG_LOGGING = builder.comment("If true, BlastPlaster prints detailed heal scheduling and batch telemetry to the log.")
-            .define("EnableDebugLogging", false);
-
-
-    SPEC = builder.build();
-  }
-
-  private Config() {}
-
-  public static void load() {
-    CommentedFileConfig configData = CommentedFileConfig.builder(FMLPaths.CONFIGDIR.get().resolve(BlastPlaster.MODID + "-common.toml")).sync().autosave().writingMode(WritingMode.REPLACE).build();
-    configData.load();
-    SPEC.setConfig(configData);
-    buildDTLogMap();
-    validateConfig();
-  }
-
-  private static void validateConfig() {
-    if (playerTNTAlwaysDrops() && !processPlayerIgnitedTNT()) { BlastPlaster.LOGGER.warn("[BlastPlaster] Config: PlayerTNTAlwaysDrops=true but ProcessPlayerIgnitedTNT=false - player TNT explosions will be ignored."); }
-    if (!isAlexsCavesNukesEnabled() && ModList.get().isLoaded("alexscaves")) { BlastPlaster.LOGGER.info("[BlastPlaster] Alex's Caves loaded but EnableAlexsCavesNukes=false (nukes will be ignored)."); }
-    if (!isExplosionOverhaulEnabled() && ModList.get().isLoaded("explosionoverhaul")) { BlastPlaster.LOGGER.info("[BlastPlaster] Explosion Overhaul loaded but EnableExplosionOverhaul=false (clustered TNT / custom craters will be ignored)."); }
-  }
-
-  public static ExplosionMode getExplosionMode() { return EXPLOSION_MODE.get(); }
-  public static boolean enableFakeTossedBlocks() { return ENABLE_FAKE_TOSSED_BLOCKS.get(); }
-  public static boolean enableExplosionFlash() { return ENABLE_EXPLOSION_FLASH.get(); }
-  public static int getExplosionFlashDuration() { return EXPLOSION_FLASH_DURATION.get(); }
-  public static int getExplosionFlashLightLevel() { return EXPLOSION_FLASH_LIGHT_LEVEL.get(); }
-  public static int getExplosionFlashParticleCount() { return EXPLOSION_FLASH_PARTICLE_COUNT.get(); }
-  public static int getExplosionFlashPulses() { return EXPLOSION_FLASH_PULSES.get(); }
-  public static boolean enableExplosionSmoke() { return ENABLE_EXPLOSION_SMOKE.get(); }
-  public static int getExplosionSmokeDuration() { return EXPLOSION_SMOKE_DURATION.get(); }
-  public static int getExplosionSmokeParticleCount() { return EXPLOSION_SMOKE_PARTICLE_COUNT.get(); }
-  public static boolean playerTNTAlwaysDrops() { return PLAYER_TNT_ALWAYS_DROPS.get(); }
-  public static boolean playerTNTDropFullBlocks() { return PLAYER_TNT_DROP_FULL_BLOCKS.get(); }
-  public static boolean healCreepers() { return HEAL_CREEPERS.get(); }
-  public static boolean healNonPlayerTNT() { return HEAL_NONPLAYER_TNT.get(); }
-  public static boolean healWither() { return HEAL_WITHER.get(); }
-  public static boolean healAll() { return HEAL_ALL.get(); }
-  public static boolean processPlayerIgnitedTNT() { return PROCESS_PLAYER_IGNITED_TNT.get(); }
-
-  @SuppressWarnings("unchecked")
-  public static List<String> getCustomEntitiesToHeal() { return (List<String>) CUSTOM_ENTITIES_TO_HEAL.get(); }
-
-  public static boolean isAlexsCavesNukesEnabled() { return ENABLE_ALEXSCAVES_NUKES.get() && ModList.get().isLoaded("alexscaves"); }
-  public static boolean isExplosionOverhaulEnabled() { return ENABLE_EXPLOSION_OVERHAUL.get() && ModList.get().isLoaded("explosionoverhaul"); }
-  public static int getMinimumTicksBeforeHeal() { return MIN_TICKS_BEFORE_HEAL.get(); }
-  public static int getRandomTickVar() { return RANDOM_TICK_VAR.get(); }
-  public static boolean isOverride() { return OVERRIDE_BLOCKS.get(); }
-  public static boolean debugLogging() { return DEBUG_LOGGING.get(); }
-  public static boolean healFullTrees() { return HEAL_FULL_TREES.get(); }
-  public static boolean dtSpecialDrops() { return DT_SPECIAL_DROPS.get(); }
-  public static int getMaxTreeSize() { return MAX_TREE_SIZE.get(); }
-  public static boolean enableDropSuppression() { return ENABLE_DROP_SUPPRESSION.get(); }
-  public static boolean preventMobDrops() { return PREVENT_MOB_DROPS.get(); }
-
-  public static Map<TagKey<Block>, Block> getTreeMap() {
-    if (TREE_MAP.isEmpty()) { buildMaps(); }
-    return TREE_MAP;
-  }
-
-  private static void buildMaps() {
-    TREE_MAP.clear();
-
-    for (Block leafBlock : ForgeRegistries.BLOCKS.getValues()) {
-      ResourceLocation loc = ForgeRegistries.BLOCKS.getKey(leafBlock);
-      if (loc != null && loc.getPath().endsWith("_leaves")) {
-        String path = loc.getPath();
-        String prefix = path.substring(0, path.length() - "_leaves".length());
-        String logPath = prefix + "_logs";
-        ResourceLocation logLoc = ResourceLocation.fromNamespaceAndPath(loc.getNamespace(), logPath);
-        TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
-
-        if (!Objects.requireNonNull(ForgeRegistries.BLOCKS.tags()).getTag(logTag).isEmpty()) { TREE_MAP.put(logTag, leafBlock); }
-      }
-    }
-
-    for (String pair : TREE_LOG_LEAF_PAIRS.get()) {
-      String[] parts = pair.split("=");
-      if (parts.length == 2) {
-        ResourceLocation logLoc = ResourceLocation.tryParse(parts[0].trim());
-        ResourceLocation leafLoc = ResourceLocation.tryParse(parts[1].trim());
-        if (logLoc != null && leafLoc != null) {
-          TagKey<Block> logTag = TagKey.create(Registries.BLOCK, logLoc);
-          Block leafBlock = ForgeRegistries.BLOCKS.getValue(leafLoc);
-          if (leafBlock != null && !Objects.requireNonNull(ForgeRegistries.BLOCKS.tags()).getTag(logTag).isEmpty()) {
-            TREE_MAP.put(logTag, leafBlock);
-          }
+            treeMapBuilt = false;
+            validateConfig();
         }
-      }
+        catch (Exception e) { BlastPlaster.logger.error("Config Error {}", String.valueOf(e)); }
+        finally { if (config.hasChanged()) { config.save(); }}
     }
-  }
 
-  private static void buildDTLogMap() {
-    DT_LOG_MAP.clear();
-    for (String entry : DT_LOG_MAPPINGS.get()) {
-      String[] parts = entry.split("=");
-      if (parts.length == 2) {
-        String dtKey = parts[0].trim().toLowerCase();
-        ResourceLocation logLoc = ResourceLocation.tryParse(parts[1].trim());
-        if (logLoc != null) {
-          Block logBlock = ForgeRegistries.BLOCKS.getValue(logLoc);
-          if (logBlock != null) { DT_LOG_MAP.put(dtKey, logBlock); }
+    private static void validateConfig() {
+        if (playerTNTAlwaysDrops && !processPlayerIgnitedTNT) { BlastPlaster.logger.warn("Config: PlayerTNTAlwaysDrops=true but ProcessPlayerIgnitedTNT=false - player TNT explosions will be ignored."); }
+    }
+
+    private static String[] modeNames() {
+        ExplosionMode[] modes = ExplosionMode.values();
+        String[] names = new String[modes.length];
+        for (int i = 0; i < modes.length; i++) { names[i] = modes[i].name(); }
+        return names;
+    }
+
+    private static ExplosionMode parseMode(String value) {
+        for (ExplosionMode mode : ExplosionMode.values()) { if (mode.name().equalsIgnoreCase(value)) { return mode; }}
+        return ExplosionMode.HEAL;
+    }
+
+    public static ExplosionMode getExplosionMode() { return explosionMode; }
+
+    public static boolean enableFakeTossedBlocks() { return enableFakeTossedBlocks; }
+
+    public static boolean enableExplosionFlash() { return enableExplosionFlash; }
+
+    public static int getExplosionFlashDuration() { return explosionFlashDuration; }
+
+    public static int getExplosionFlashLightLevel() { return explosionFlashLightLevel; }
+
+    public static int getExplosionFlashParticleCount() { return explosionFlashParticleCount; }
+
+    public static int getExplosionFlashPulses() { return explosionFlashPulses; }
+
+    public static boolean enableExplosionSmoke() { return enableExplosionSmoke; }
+
+    public static int getExplosionSmokeDuration() { return explosionSmokeDuration; }
+
+    public static int getExplosionSmokeParticleCount() { return explosionSmokeParticleCount; }
+
+    public static boolean playerTNTAlwaysDrops() { return playerTNTAlwaysDrops; }
+
+    public static boolean playerTNTDropFullBlocks() { return playerTNTDropFullBlocks; }
+
+    public static boolean healCreepers() { return healCreepers; }
+
+    public static boolean healNonPlayerTNT() { return healNonPlayerTNT; }
+
+    public static boolean healWither() { return healWither; }
+
+    public static boolean healAll() { return healAll; }
+
+    public static boolean processPlayerIgnitedTNT() { return processPlayerIgnitedTNT; }
+
+    public static List<String> getCustomEntitiesToHeal() { return CUSTOM_ENTITIES; }
+
+    public static int getMinimumTicksBeforeHeal() { return minTicksBeforeHeal; }
+
+    public static int getRandomTickVar() { return randomTickVar; }
+
+    public static boolean isOverride() { return overrideBlocks; }
+
+    public static boolean debugLogging() { return debugLogging; }
+
+    public static boolean healFullTrees() { return healFullTrees; }
+
+    public static boolean dtSpecialDrops() { return dtSpecialDrops; }
+
+    public static int getMaxTreeSize() { return maxTreeSize; }
+
+    public static boolean enableDropSuppression() { return enableDropSuppression; }
+
+    public static boolean preventMobDrops() { return preventMobDrops; }
+
+    public static boolean isLog(IBlockState state) { return getLogKey(state) != null; }
+
+    public static String getLogKey(IBlockState state) {
+        buildTreeMap();
+        String cached = LOG_KEY_CACHE.get(state);
+        if (cached == null) {
+            String key = variantKey(state);
+            cached = LOG_KEYS.contains(key) ? key : NO_KEY;
+            LOG_KEY_CACHE.put(state, cached);
         }
-      }
-    }
-  }
-
-  public static Block getDTLogForPath(String path) {
-    if (path == null) { return Blocks.OAK_LOG; }
-
-    String key = path.toLowerCase().trim();
-
-    Block direct = DT_LOG_MAP.get(key);
-    if (direct != null) { return direct; }
-
-    if (!key.startsWith("dynamictrees:")) { return Blocks.OAK_LOG; }
-
-    String base = key.substring(13);
-
-    for (String suffix : DT_SUFFIXES) {
-      if (base.endsWith(suffix)) {
-        String species = base.substring(0, base.length() - suffix.length());
-        String speciesKey = "dynamictrees:" + species;
-        Block mapped = DT_LOG_MAP.get(speciesKey);
-        if (mapped != null) { return mapped; }
-      }
+        return cached.isEmpty() ? null : cached;
     }
 
-    String[] segments = base.split("_");
-    if (segments.length > 1) {
-      String[] speciesSegments = Arrays.copyOf(segments, segments.length - 1);
-      String species = String.join("_", speciesSegments);
-      String lookupKey = "dynamictrees:" + species;
-      Block mapped = DT_LOG_MAP.get(lookupKey);
-      if (mapped != null) { return mapped; }
+    public static String getLeavesKey(IBlockState state) {
+        buildTreeMap();
+        String cached = LEAF_KEY_CACHE.get(state);
+        if (cached == null) {
+            String key = variantKey(state);
+            cached = LEAF_KEYS.contains(key) ? key : NO_KEY;
+            LEAF_KEY_CACHE.put(state, cached);
+        }
+        return cached.isEmpty() ? null : cached;
     }
 
-    return Blocks.OAK_LOG;
-  }
+    public static String getLeavesKeyForLog(String logKey) {
+        buildTreeMap();
+        return TREE_MAP.get(logKey);
+    }
+
+    private static String variantKey(IBlockState state) {
+        Block block = state.getBlock();
+        ResourceLocation name = block.getRegistryName();
+        if (name == null) { return ""; }
+        return name + ":" + block.damageDropped(state);
+    }
+
+    private static String blockName(String key) { return key.substring(0, key.lastIndexOf(':')); }
+
+    private static void buildTreeMap() {
+        if (treeMapBuilt) { return; }
+        treeMapBuilt = true;
+        TREE_MAP.clear();
+        LOG_KEYS.clear();
+        LEAF_KEYS.clear();
+        LOG_KEY_CACHE.clear();
+        LEAF_KEY_CACHE.clear();
+        Map<String, String> logNames = new HashMap<>();
+        Map<String, String> leafNames = new HashMap<>();
+        collectOreKeys("logWood", LOG_KEYS, logNames);
+        collectOreKeys("treeLeaves", LEAF_KEYS, leafNames);
+        int namePairs = 0;
+        for (Map.Entry<String, String> entry : logNames.entrySet()) {
+            String leafKey = leafNames.get(entry.getKey());
+            if (leafKey != null) {
+                TREE_MAP.put(entry.getValue(), leafKey);
+                namePairs++;
+            }
+        }
+        BlastPlaster.debug("Paired {} log/leaf types by variant name", namePairs);
+        addPair(Blocks.LOG, 0, Blocks.LEAVES, 0);
+        addPair(Blocks.LOG, 1, Blocks.LEAVES, 1);
+        addPair(Blocks.LOG, 2, Blocks.LEAVES, 2);
+        addPair(Blocks.LOG, 3, Blocks.LEAVES, 3);
+        addPair(Blocks.LOG2, 0, Blocks.LEAVES2, 4);
+        addPair(Blocks.LOG2, 1, Blocks.LEAVES2, 5);
+        pairByName();
+        applyConfigPairs();
+        reportUnpaired();
+    }
+
+    @SuppressWarnings("deprecation") private static void collectOreKeys(String oreName, Set<String> out, Map<String, String> namesOut) {
+        for (ItemStack stack : OreDictionary.getOres(oreName)) {
+            Block block = Block.getBlockFromItem(stack.getItem());
+            if (block == Blocks.AIR) { continue; }
+            if (block.getRegistryName() == null) { continue; }
+            int firstMeta = stack.getItemDamage() == OreDictionary.WILDCARD_VALUE ? 0 : stack.getItemDamage();
+            int lastMeta = stack.getItemDamage() == OreDictionary.WILDCARD_VALUE ? 15 : stack.getItemDamage();
+            for (int meta = firstMeta; meta <= lastMeta; meta++) {
+                IBlockState state;
+                try { state = block.getStateFromMeta(meta); }
+                catch (Exception e) { continue; }
+                String key = variantKey(state);
+                out.add(key);
+                String variantName = variantName(state);
+                if (variantName != null && !namesOut.containsKey(variantName)) { namesOut.put(variantName, key); }
+            }
+        }
+    }
+
+    private static String variantName(IBlockState state) {
+        for (IProperty<?> property : state.getPropertyKeys()) {
+            if (!"variant".equals(property.getName())) { continue; }
+            Comparable<?> value = state.getValue(property);
+            if (value instanceof IStringSerializable) { return ((IStringSerializable) value).getName(); }
+            return value.toString().toLowerCase(Locale.ROOT);
+        }
+        return null;
+    }
+
+    private static void addPair(Block log, int logMeta, Block leaves, int leavesMeta) {
+        String logKey = log.getRegistryName() + ":" + logMeta;
+        String leavesKey = leaves.getRegistryName() + ":" + leavesMeta;
+        LOG_KEYS.add(logKey);
+        LEAF_KEYS.add(leavesKey);
+        TREE_MAP.put(logKey, leavesKey);
+    }
+
+    private static void pairByName() {
+        for (String logKey : LOG_KEYS) {
+            if (TREE_MAP.containsKey(logKey)) { continue; }
+            int split = logKey.lastIndexOf(':');
+            String name = logKey.substring(0, split);
+            if (!name.endsWith("_log")) { continue; }
+            String candidate = name.substring(0, name.length() - 4) + "_leaves" + logKey.substring(split);
+            if (LEAF_KEYS.contains(candidate)) { TREE_MAP.put(logKey, candidate); }
+        }
+    }
+
+    private static void applyConfigPairs() {
+        for (String pair : treeLogLeafPairs) {
+            String[] parts = pair.split("=");
+            if (parts.length != 2) { continue; }
+            String logKey = normalizeKey(parts[0]);
+            String leavesKey = normalizeKey(parts[1]);
+            if (logKey == null || leavesKey == null) { continue; }
+            LOG_KEYS.add(logKey);
+            LEAF_KEYS.add(leavesKey);
+            TREE_MAP.put(logKey, leavesKey);
+        }
+    }
+
+    private static String normalizeKey(String entry) {
+        String value = entry.trim();
+        int count = 0;
+        for (int i = 0; i < value.length(); i++) { if (value.charAt(i) == ':') { count++; }}
+        if (count == 1) { return value + ":0"; }
+        if (count == 2) { return value; }
+        return null;
+    }
+
+    private static void reportUnpaired() {
+        Set<String> paired = new HashSet<>();
+        for (String logKey : TREE_MAP.keySet()) { paired.add(blockName(logKey)); }
+        Set<String> reported = new HashSet<>();
+        for (String logKey : LOG_KEYS) {
+            String name = blockName(logKey);
+            if (paired.contains(name) || !reported.add(name)) { continue; }
+            BlastPlaster.debug("No leaf pairing found for log {}", name);
+        }
+    }
 }

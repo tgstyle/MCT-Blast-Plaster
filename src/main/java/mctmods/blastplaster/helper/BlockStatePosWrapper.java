@@ -1,48 +1,42 @@
 package mctmods.blastplaster.helper;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtUtils;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTUtil;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 
 public class BlockStatePosWrapper {
-    private BlockPos pos;
-    private BlockState state;
-    private CompoundTag entityTag;
 
-    public BlockStatePosWrapper(Level level, BlockPos pos, BlockState state) {
+    private BlockPos pos;
+    private IBlockState state;
+    private NBTTagCompound entityTag;
+
+    public BlockStatePosWrapper(World world, BlockPos pos, IBlockState state) {
         this.state = state;
         this.pos = pos;
-        BlockEntity entity = level.getBlockEntity(pos);
-        if (entity != null) { this.entityTag = entity.saveWithoutMetadata(); }
+        TileEntity entity = world.getTileEntity(pos);
+        if (entity != null) { this.entityTag = entity.writeToNBT(new NBTTagCompound()); }
     }
 
     public BlockStatePosWrapper() {}
 
-    public BlockState getState() {
-        return this.state;
+    public IBlockState getState() { return this.state; }
+
+    public BlockPos getPos() { return this.pos; }
+
+    public NBTTagCompound getEntityTag() { return this.entityTag; }
+
+    public void readNBT(NBTTagCompound tag) {
+        this.state = NBTUtil.readBlockState(tag.getCompoundTag("block"));
+        this.pos = BlockPos.fromLong(tag.getLong("pos"));
+        if (tag.hasKey("entity")) { this.entityTag = tag.getCompoundTag("entity"); }
     }
 
-    public BlockPos getPos() {
-        return this.pos;
-    }
-
-    public CompoundTag getEntityTag() {
-        return this.entityTag;
-    }
-
-    public void readNBT(CompoundTag tag, Level level) {
-        this.state = NbtUtils.readBlockState(level.holderLookup(Registries.BLOCK), tag.getCompound("block"));
-        this.pos = NbtUtils.readBlockPos(tag.getCompound("pos"));
-        if (tag.contains("entity")) { this.entityTag = tag.getCompound("entity"); }
-    }
-
-    public void writeNBT(CompoundTag tag) {
-        tag.put("block", NbtUtils.writeBlockState(this.state));
-        tag.put("pos", NbtUtils.writeBlockPos(this.pos));
-        if (this.entityTag != null) { tag.put("entity", this.entityTag); }
+    public void writeNBT(NBTTagCompound tag) {
+        tag.setTag("block", NBTUtil.writeBlockState(new NBTTagCompound(), this.state));
+        tag.setLong("pos", this.pos.toLong());
+        if (this.entityTag != null) { tag.setTag("entity", this.entityTag); }
     }
 }

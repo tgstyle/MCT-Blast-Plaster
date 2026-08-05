@@ -5,6 +5,7 @@ import java.util.ListIterator;
 import java.util.Objects;
 
 public abstract class TickingLinkedList<T> {
+
     protected LinkedList<TickContainer<T>> queue = new LinkedList<>();
 
     public T processTick() {
@@ -15,9 +16,7 @@ public abstract class TickingLinkedList<T> {
         return null;
     }
 
-    public void enqueue(int ticks, T value) {
-        this.enqueue(new TickContainer<>(ticks, value));
-    }
+    public void enqueue(int ticks, T value) { this.enqueue(new TickContainer<>(ticks, value)); }
 
     protected void enqueue(TickContainer<T> toAdd) {
         if (this.queue.isEmpty()) {

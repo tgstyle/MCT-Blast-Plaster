@@ -7,6 +7,8 @@
 # MCT Blast Plaster
 Plaster those Blasts!<br/>
 
+This branch is for the 1.12.2 version of Minecraft.<br/>
+
 # Reporting issues
 When you are reporting bugs, please attach the crash report, mod and forge version.<br/>
 

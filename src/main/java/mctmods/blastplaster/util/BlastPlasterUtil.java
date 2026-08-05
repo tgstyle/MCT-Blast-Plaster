@@ -1,33 +1,37 @@
 package mctmods.blastplaster.util;
 
+import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.item.FallingBlockEntity;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.IntegerProperty;
-import net.minecraft.world.level.block.state.properties.Property;
-import net.minecraft.world.level.storage.loot.LootParams;
-import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockOldLog;
+import net.minecraft.block.BlockPlanks;
+import net.minecraft.block.properties.IProperty;
+import net.minecraft.block.properties.PropertyInteger;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.item.EntityFallingBlock;
+import net.minecraft.entity.item.EntityItem;
+import net.minecraft.init.Blocks;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.RayTraceResult;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
 import com.ferreusveritas.dynamictrees.api.TreeHelper;
-import com.ferreusveritas.dynamictrees.block.FruitBlock;
-import com.ferreusveritas.dynamictrees.block.PodBlock;
-import com.ferreusveritas.dynamictrees.block.branch.SurfaceRootBlock;
-import com.ferreusveritas.dynamictrees.block.branch.TrunkShellBlock;
+import com.ferreusveritas.dynamictrees.api.treedata.ITreePart;
+import com.ferreusveritas.dynamictrees.blocks.BlockBranch;
+import com.ferreusveritas.dynamictrees.blocks.BlockFruit;
+import com.ferreusveritas.dynamictrees.blocks.BlockFruitCocoa;
+import com.ferreusveritas.dynamictrees.blocks.BlockSurfaceRoot;
+import com.ferreusveritas.dynamictrees.blocks.BlockTrunkShell;
+import com.ferreusveritas.dynamictrees.trees.TreeFamily;
+import net.minecraftforge.common.util.FakePlayerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -36,18 +40,11 @@ public class BlastPlasterUtil {
 
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
     public static final float CREEPER_VISUAL_CHANCE = 0.25f;
-    public static final float ALEXSCAVES_NUKE_VISUAL_CHANCE = 0.01f;
     public static final int FALLING_BLOCK_SUPPRESS_TICKS = 25;
     public static final String BYPASS_TAG = "BlastPlasterBypass";
-    public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
-    public static final boolean EO_LOADED = ModList.get().isLoaded("explosionoverhaul");
-    public static final boolean AC_LOADED = ModList.get().isLoaded("alexscaves");
-
+    public static final boolean DT_LOADED = BlastPlaster.dynamictrees;
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
-
     private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
-
-    private record ExplosionArea(AABB box, long expireTick, long fallingExpireTick) {}
 
     static {
         for (int x = -1; x <= 1; x++) {
@@ -59,15 +56,45 @@ public class BlastPlasterUtil {
         }
     }
 
-    public static float getVisualSpawnChance(boolean isCreeper, boolean isAlexsCavesNuke) {
-        if (isAlexsCavesNuke) { return ALEXSCAVES_NUKE_VISUAL_CHANCE; }
-        if (isCreeper) { return CREEPER_VISUAL_CHANCE; }
-        return DEFAULT_VISUAL_CHANCE;
+    private static class ExplosionArea {
+
+        private final int dimension;
+        private final AxisAlignedBB box;
+        private final long expireTick;
+        private final long fallingExpireTick;
+
+        private ExplosionArea(int dimension, AxisAlignedBB box, long expireTick, long fallingExpireTick) {
+            this.dimension = dimension;
+            this.box = box;
+            this.expireTick = expireTick;
+            this.fallingExpireTick = fallingExpireTick;
+        }
     }
 
-    public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
+    public static class PendingDrop {
 
-    public static void recordExplosionArea(ServerLevel level, Set<BlockPos> positions, boolean suppressFallingBlocks) {
+        private final Vec3d pos;
+        private final ItemStack stack;
+        private final boolean gentle;
+
+        public PendingDrop(Vec3d pos, ItemStack stack, boolean gentle) {
+            this.pos = pos;
+            this.stack = stack;
+            this.gentle = gentle;
+        }
+
+        public Vec3d pos() { return pos; }
+
+        public ItemStack stack() { return stack; }
+
+        public boolean isGentle() { return gentle; }
+    }
+
+    public static float getVisualSpawnChance(boolean isCreeper) { return isCreeper ? CREEPER_VISUAL_CHANCE : DEFAULT_VISUAL_CHANCE; }
+
+    public static void markSuppressionBypass(EntityItem item) { item.getEntityData().setBoolean(BYPASS_TAG, true); }
+
+    public static void recordExplosionArea(WorldServer world, Set<BlockPos> positions, boolean suppressFallingBlocks) {
         if (positions.isEmpty()) { return; }
 
         double minX = Double.MAX_VALUE;
@@ -86,235 +113,219 @@ public class BlastPlasterUtil {
             maxZ = Math.max(maxZ, pos.getZ());
         }
 
-        AABB box = new AABB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
-        long now = level.getGameTime();
+        AxisAlignedBB box = new AxisAlignedBB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
+        long now = world.getTotalWorldTime();
 
-        recentExplosions.add(new ExplosionArea(box, now + 200L, suppressFallingBlocks ? now + FALLING_BLOCK_SUPPRESS_TICKS : 0L));
-        recentExplosions.removeIf(area -> area.expireTick < now);
+        recentExplosions.add(new ExplosionArea(world.provider.getDimension(), box, now + 200L, suppressFallingBlocks ? now + FALLING_BLOCK_SUPPRESS_TICKS : 0L));
+        expire(now);
     }
 
-    @SuppressWarnings("resource")
-    public static boolean shouldSuppressItemDrop(ItemEntity item) {
-        if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
-        Level rawLevel = item.level();
-        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+    private static void expire(long now) {
+        for (int i = recentExplosions.size() - 1; i >= 0; i--) {
+            if (recentExplosions.get(i).expireTick < now) { recentExplosions.remove(i); }
+        }
+    }
 
-        long now = serverLevel.getGameTime();
-        recentExplosions.removeIf(area -> area.expireTick < now);
+    public static boolean shouldSuppressItemDrop(EntityItem item) {
+        if (item.getEntityData().getBoolean(BYPASS_TAG)) { return false; }
+        if (!(item.world instanceof WorldServer)) { return false; }
+        return shouldSuppressAt((WorldServer) item.world, item.getPositionVector());
+    }
 
-        Vec3 pos = item.position();
+    private static boolean shouldSuppressAt(WorldServer world, Vec3d pos) {
+        long now = world.getTotalWorldTime();
+        int dimension = world.provider.getDimension();
+        expire(now);
+
         for (ExplosionArea area : recentExplosions) {
-            if (area.box.contains(pos)) {
-                return true;
-            }
+            if (area.dimension == dimension && area.box.contains(pos)) { return true; }
         }
         return false;
     }
 
-    public static boolean shouldSuppressLaunchAt(ServerLevel level, Vec3 pos) {
-        long now = level.getGameTime();
-        recentExplosions.removeIf(area -> area.expireTick < now);
+    public static boolean shouldSuppressLaunchAt(WorldServer world, Vec3d pos) {
+        long now = world.getTotalWorldTime();
+        int dimension = world.provider.getDimension();
+        expire(now);
 
         for (ExplosionArea area : recentExplosions) {
-            if (area.fallingExpireTick >= now && area.box.contains(pos)) {
-                return true;
-            }
+            if (area.dimension == dimension && area.fallingExpireTick >= now && area.box.contains(pos)) { return true; }
         }
         return false;
     }
 
-    @SuppressWarnings("resource")
-    public static boolean shouldSuppressFallingBlock(FallingBlockEntity falling) {
-        Level rawLevel = falling.level();
-        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
-        return shouldSuppressLaunchAt(serverLevel, falling.position());
+    public static boolean shouldSuppressFallingBlock(EntityFallingBlock falling) {
+        if (!(falling.world instanceof WorldServer)) { return false; }
+        return shouldSuppressLaunchAt((WorldServer) falling.world, falling.getPositionVector());
     }
 
-    private static void addVerticalInDirection(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType, boolean upward) {
+    private static void addVerticalInDirection(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, World world, BlockPos pos, Block blockType, boolean upward) {
         int h = 1;
         while (true) {
-            BlockPos offset = upward ? pos.above(h) : pos.below(h);
-            BlockState state = level.getBlockState(offset);
+            BlockPos offset = upward ? pos.up(h) : pos.down(h);
+            IBlockState state = world.getBlockState(offset);
             if (state.getBlock() != blockType) { break; }
-            if (!affectedPos.contains(offset)) { extras.add(new BlockStatePosWrapper(level, offset, state)); }
+            if (!affectedPos.contains(offset)) { extras.add(new BlockStatePosWrapper(world, offset, state)); }
             h++;
             if (h > 20) { break; }
         }
     }
 
-    public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType) {
-        addVerticalInDirection(extras, affectedPos, level, pos, blockType, true);
-        addVerticalInDirection(extras, affectedPos, level, pos, blockType, false);
+    public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, World world, BlockPos pos, Block blockType) {
+        addVerticalInDirection(extras, affectedPos, world, pos, blockType, true);
+        addVerticalInDirection(extras, affectedPos, world, pos, blockType, false);
     }
 
-    public static void addBambooVerticals(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, Level level) {
+    public static void addReedVerticals(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, World world) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();
         for (BlockStatePosWrapper w : new ArrayList<>(toProcess)) {
             BlockPos pos = w.getPos();
             Block block = w.getState().getBlock();
 
-            if (block == Blocks.SUGAR_CANE || block == Blocks.BAMBOO) {
-                addVerticalColumn(extras, affectedPos, level, pos, block);
+            if (block == Blocks.REEDS) {
+                addVerticalColumn(extras, affectedPos, world, pos, block);
 
                 for (BlockPos offset : NEIGHBOR_POSITIONS) {
-                    BlockPos adj = pos.offset(offset);
-                    BlockState adjState = level.getBlockState(adj);
-                    if (adjState.getBlock() == block) { addVerticalColumn(extras, affectedPos, level, adj, block); }
+                    BlockPos adj = pos.add(offset);
+                    IBlockState adjState = world.getBlockState(adj);
+                    if (adjState.getBlock() == block) { addVerticalColumn(extras, affectedPos, world, adj, block); }
                 }
             }
         }
         toProcess.addAll(extras);
     }
 
-    public record PendingDrop(Vec3 pos, ItemStack stack, boolean isGentle) {}
-
-    public static boolean isDynamicTrees(BlockState state) {
+    public static boolean isDynamicTrees(IBlockState state) {
         if (!DT_LOADED) { return false; }
         return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state);
     }
 
-    public static boolean isDynamicTreesAssembly(BlockState state) {
+    public static boolean isDynamicTreesAssembly(IBlockState state) {
         if (!DT_LOADED) { return false; }
         Block block = state.getBlock();
         return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state)
-                || block instanceof TrunkShellBlock || block instanceof SurfaceRootBlock || block instanceof FruitBlock || block instanceof PodBlock;
+                || block instanceof BlockTrunkShell || block instanceof BlockSurfaceRoot || block instanceof BlockFruit || block instanceof BlockFruitCocoa;
     }
 
-    public static boolean isDtWood(BlockState state) {
-        if (!DT_LOADED) { return false; }
-        Block block = state.getBlock();
-        return TreeHelper.isBranch(state) || TreeHelper.isRooty(state) || block instanceof TrunkShellBlock || block instanceof SurfaceRootBlock;
-    }
-
-    public static int getDTRadius(BlockState state) {
-        for (Property<?> p : state.getProperties()) { if ("radius".equals(p.getName()) && p instanceof IntegerProperty radiusProp) { return state.getValue(radiusProp); } }
+    public static int getDTRadius(IBlockState state) {
+        if (!DT_LOADED) { return 1; }
+        ITreePart treePart = TreeHelper.getTreePart(state);
+        if (treePart != TreeHelper.nullTreePart) { return treePart.getRadius(state); }
+        for (IProperty<?> property : state.getPropertyKeys()) {
+            if ("radius".equals(property.getName()) && property instanceof PropertyInteger) { return state.getValue((PropertyInteger) property); }
+        }
         return 1;
     }
 
-    public static List<ItemStack> generateDynamicTreesDrops(ServerLevel level, BlockState state) {
-        if (!DT_LOADED) { return new ArrayList<>(); }
-        int radius = getDTRadius(state);
+    public static List<ItemStack> generateDynamicTreesDrops(WorldServer world, IBlockState state) {
         List<ItemStack> drops = new ArrayList<>();
+        if (!DT_LOADED) { return drops; }
 
+        int radius = getDTRadius(state);
         int numLogs = 0;
-        if (radius >= 8) { numLogs = 1 + level.random.nextInt(2); }
+        if (radius >= 8) { numLogs = 1 + world.rand.nextInt(2); }
         else if (radius >= 6) { numLogs = 1; }
-        else if (radius >= 4) { numLogs = level.random.nextBoolean() ? 1 : 0; }
+        else if (radius >= 4) { numLogs = world.rand.nextBoolean() ? 1 : 0; }
 
-        int numSticks = 0;
-        if (TreeHelper.isLeaves(state)) { numSticks = level.random.nextFloat() < 0.05f ? 1 : 0; }
+        if (numLogs > 0) {
+            BlockBranch branch = TreeHelper.getBranch(state);
+            if (branch != null) {
+                TreeFamily family = branch.getFamily();
+                ItemStack logStack = family == null ? ItemStack.EMPTY : family.getPrimitiveLogItemStack(1);
+                if (!logStack.isEmpty()) { for (int i = 0; i < numLogs; i++) { drops.add(logStack.copy()); }}
+            }
+        }
 
-        ResourceLocation key = ForgeRegistries.BLOCKS.getKey(state.getBlock());
-        String path = (key != null) ? key.toString() : "";
-        Block logBlock = Config.getDTLogForPath(path);
-        ItemStack logStack = new ItemStack(logBlock);
-
-        for (int i = 0; i < numLogs; i++) { drops.add(logStack.copy()); }
-        if (numSticks > 0) { drops.add(new ItemStack(Items.STICK, numSticks)); }
+        if (TreeHelper.isLeaves(state) && world.rand.nextFloat() < 0.05f) { drops.add(new ItemStack(Items.STICK, 1)); }
 
         return drops;
     }
 
-    public static void addDynamicTreesDropsToPending(List<PendingDrop> pending, ServerLevel level, BlockPos pos, BlockState state, boolean isGentle) {
-        List<ItemStack> drops = generateDynamicTreesDrops(level, state);
-        Vec3 center = Vec3.atCenterOf(pos);
+    public static void addDynamicTreesDropsToPending(List<PendingDrop> pending, WorldServer world, BlockPos pos, IBlockState state, boolean isGentle) {
+        List<ItemStack> drops = generateDynamicTreesDrops(world, state);
+        Vec3d center = centerOf(pos);
         for (ItemStack stack : drops) { pending.add(new PendingDrop(center, stack, isGentle)); }
     }
 
-    public static void spawnDynamicTreesDrops(ServerLevel level, BlockPos pos, BlockState state) {
-        List<ItemStack> drops = generateDynamicTreesDrops(level, state);
-        Vec3 center = Vec3.atCenterOf(pos);
-        for (ItemStack stack : drops) {
-            ItemEntity item = new ItemEntity(level, center.x, center.y + 0.5, center.z, stack);
-            markSuppressionBypass(item);
-            applyTossVelocity(item, level);
-            level.addFreshEntity(item);
-        }
-    }
-
-    public static void spawnEjectDrops(ServerLevel level, BlockPos pos, BlockState state) {
-        if (isDynamicTrees(state) && Config.dtSpecialDrops()) {
-            spawnDynamicTreesDrops(level, pos, state);
-            return;
-        }
-        LootParams.Builder builder = new LootParams.Builder(level)
-                .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
-                .withParameter(LootContextParams.EXPLOSION_RADIUS, 4.0F);
-        for (ItemStack stack : state.getDrops(builder)) {
-            if (stack.isEmpty()) { continue; }
-            ItemEntity item = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
-            markSuppressionBypass(item);
-            applyTossVelocity(item, level);
-            level.addFreshEntity(item);
-        }
-    }
-
-    public static void spawnVisualTossedBlock(ServerLevel level, BlockPos pos, BlockState state) {
-        ItemStack stack = new ItemStack(state.getBlock());
-        ItemEntity visual = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
-        visual.setPickUpDelay(32767);
+    public static void spawnVisualTossedBlock(WorldServer world, BlockPos pos, IBlockState state) {
+        ItemStack stack;
+        RayTraceResult target = new RayTraceResult(new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5), EnumFacing.UP, pos);
+        try { stack = state.getBlock().getPickBlock(state, target, world, pos, FakePlayerFactory.getMinecraft(world)); }
+        catch (Exception e) { stack = new ItemStack(state.getBlock()); }
+        if (stack.isEmpty()) { return; }
+        EntityItem visual = new EntityItem(world, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
+        visual.setInfinitePickupDelay();
         visual.lifespan = 60;
         markSuppressionBypass(visual);
-        applyTossVelocity(visual, level);
-        level.addFreshEntity(visual);
+        applyTossVelocity(visual, world);
+        world.spawnEntity(visual);
     }
 
-    public static void applyTossVelocity(ItemEntity entity, ServerLevel level) {
-        double dx = level.random.nextDouble() - 0.5;
-        double dy = level.random.nextDouble() * 0.55 + 0.35;
-        double dz = level.random.nextDouble() - 0.5;
+    public static void applyTossVelocity(EntityItem entity, WorldServer world) {
+        double dx = world.rand.nextDouble() - 0.5;
+        double dy = world.rand.nextDouble() * 0.55 + 0.35;
+        double dz = world.rand.nextDouble() - 0.5;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0) {
-            double strength = 0.42 + level.random.nextDouble() * 0.58;
-            entity.setDeltaMovement(dx / len * strength, dy / len * strength, dz / len * strength);
+            double strength = 0.42 + world.rand.nextDouble() * 0.58;
+            entity.motionX = dx / len * strength;
+            entity.motionY = dy / len * strength;
+            entity.motionZ = dz / len * strength;
         }
     }
 
-    public static void applyGentleTossVelocity(ItemEntity entity, ServerLevel level) {
-        double dx = level.random.nextDouble() - 0.5;
-        double dy = level.random.nextDouble() * 0.3 + 0.25;
-        double dz = level.random.nextDouble() - 0.5;
+    public static void applyGentleTossVelocity(EntityItem entity, WorldServer world) {
+        double dx = world.rand.nextDouble() - 0.5;
+        double dy = world.rand.nextDouble() * 0.3 + 0.25;
+        double dz = world.rand.nextDouble() - 0.5;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0) {
-            double strength = 0.18 + level.random.nextDouble() * 0.22;
-            entity.setDeltaMovement(dx / len * strength, dy / len * strength, dz / len * strength);
+            double strength = 0.18 + world.rand.nextDouble() * 0.22;
+            entity.motionX = dx / len * strength;
+            entity.motionY = dy / len * strength;
+            entity.motionZ = dz / len * strength;
         }
     }
 
-    public static void clearExplodedBlock(ServerLevel level, BlockPos pos) {
-        level.removeBlockEntity(pos);
-        level.destroyBlock(pos, false);
+    public static void setDtDestroyIgnored(boolean ignored) {
+        if (!DT_LOADED) { return; }
+        BlockBranch.destroyMode = ignored ? BlockBranch.EnumDestroyMode.IGNORE : BlockBranch.EnumDestroyMode.SLOPPY;
     }
 
-    public static void finalizeExplodedBlock(ServerLevel level, BlockPos pos, BlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
+    public static void clearExplodedBlock(WorldServer world, BlockPos pos) {
+        world.removeTileEntity(pos);
+        world.destroyBlock(pos, false);
+    }
+
+    public static void finalizeExplodedBlock(WorldServer world, BlockPos pos, IBlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
         if (effectiveMode == Config.ExplosionMode.EJECT_DROPS) {
-            if (!realDropOccurred && Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
-        } else if (Config.enableFakeTossedBlocks() && (effectiveMode == Config.ExplosionMode.HEAL || effectiveMode == Config.ExplosionMode.VISUAL_TOSS) && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
-        clearExplodedBlock(level, pos);
+            if (!realDropOccurred && Config.enableFakeTossedBlocks() && world.rand.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(world, pos, state); }
+        }
+        else if (Config.enableFakeTossedBlocks() && (effectiveMode == Config.ExplosionMode.HEAL || effectiveMode == Config.ExplosionMode.VISUAL_TOSS) && world.rand.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(world, pos, state); }
+        clearExplodedBlock(world, pos);
     }
 
-    public static boolean calculateRealDrop(ServerLevel level) { return level.random.nextFloat() < (Config.enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
-
-    public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
+    public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, WorldServer world) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();
         for (BlockStatePosWrapper w : new ArrayList<>(toProcess)) {
             BlockPos pos = w.getPos();
-            BlockState state = w.getState();
-            if (state.getBlock() == Blocks.JUNGLE_LOG || state.getBlock() == Blocks.JUNGLE_WOOD) {
-                for (Direction dir : Direction.values()) {
-                    BlockPos adj = pos.relative(dir);
-                    if (!affectedPos.contains(adj)) {
-                        BlockState adjState = level.getBlockState(adj);
-                        if (adjState.getBlock() == Blocks.COCOA) {
-                            level.destroyBlock(adj, false);
-                            extras.add(new BlockStatePosWrapper(level, adj, adjState));
-                            affectedPos.add(adj);
-                        }
-                    }
+            if (!isJungleLog(w.getState())) { continue; }
+
+            for (EnumFacing dir : EnumFacing.values()) {
+                BlockPos adj = pos.offset(dir);
+                if (affectedPos.contains(adj)) { continue; }
+                IBlockState adjState = world.getBlockState(adj);
+                if (adjState.getBlock() == Blocks.COCOA) {
+                    world.destroyBlock(adj, false);
+                    extras.add(new BlockStatePosWrapper(world, adj, adjState));
+                    affectedPos.add(adj);
                 }
             }
         }
         toProcess.addAll(extras);
     }
+
+    private static boolean isJungleLog(IBlockState state) { return state.getBlock() == Blocks.LOG && state.getValue(BlockOldLog.VARIANT) == BlockPlanks.EnumType.JUNGLE; }
+
+    private static Vec3d centerOf(BlockPos pos) { return new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5); }
 }
