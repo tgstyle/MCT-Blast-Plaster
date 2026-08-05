@@ -100,7 +100,7 @@ public class Config {
     EXPLOSION_SMOKE_DURATION = builder.comment("Total server ticks the smoke poof effect continues (200 ticks = 10 seconds; bursts every 15 ticks).")
             .defineInRange("ExplosionSmokeDuration", 200, 40, 1200);
     EXPLOSION_SMOKE_PARTICLE_COUNT = builder.comment("CAMPFIRE_SIGNAL_SMOKE particles per burst (first burst doubled for initial outward poof; total ~15 particles over 10s at default; higher = thicker rising column).")
-            .defineInRange("ExplosionSmokeParticleCount", 10, 1, 10);
+            .defineInRange("ExplosionSmokeParticleCount", 1, 1, 10);
 
     PLAYER_TNT_ALWAYS_DROPS = builder.comment("If true (default), player-ignited TNT explosions ALWAYS use EJECT_DROPS behavior (real item drops + permanent removal) regardless of global ExplosionMode. Set false to respect the selected global mode. NOTE: Requires ProcessPlayerIgnitedTNT=true to have any effect.")
             .define("PlayerTNTAlwaysDrops", true);

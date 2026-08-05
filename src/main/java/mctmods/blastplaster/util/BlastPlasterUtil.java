@@ -26,6 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import com.dtteam.dynamictrees.DynamicTrees;
+import com.dtteam.dynamictrees.block.branch.BranchBlock;
 import com.dtteam.dynamictrees.tree.TreeHelper;
 
 public class BlastPlasterUtil {
@@ -224,6 +226,11 @@ public class BlastPlasterUtil {
             double strength = 0.18 + level.random.nextDouble() * 0.22;
             entity.setDeltaMovement(dx / len * strength, dy / len * strength, dz / len * strength);
         }
+    }
+
+    public static void setDtDestroyIgnored(boolean ignored) {
+        if (!DT_LOADED) { return; }
+        BranchBlock.destroyMode = ignored ? DynamicTrees.DestroyMode.IGNORE : DynamicTrees.DestroyMode.SLOPPY;
     }
 
     public static void clearExplodedBlock(ServerLevel level, BlockPos pos) {
