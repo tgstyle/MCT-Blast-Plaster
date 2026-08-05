@@ -130,6 +130,8 @@ public class ExplosionEventHandler {
       }
     }
 
+    BlastPlaster.debug("Detonate: at {} {} {}, exploder {}, indirect {}, creeper {}, playerTNT {}, process {}, dtLoaded {}, affected {}", (int) explosion.getPosition().x, (int) explosion.getPosition().y, (int) explosion.getPosition().z, exploder == null ? "none" : exploder.getClass().getSimpleName(), indirect == null ? "none" : indirect.getClass().getSimpleName(), isCreeper, isPlayerIgnitedTNT, processThis, BlastPlasterUtil.DT_LOADED, event.getAffectedBlocks().size());
+
     if (!processThis) { return; }
 
     ServerLevel serverLevel = (ServerLevel) event.getLevel();
@@ -177,7 +179,8 @@ public class ExplosionEventHandler {
 
       explosion.getToBlow().removeAll(affectedPos);
 
-      if (worldHealer != null && eoSnapshot == null) { worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, serverLevel); }
+      List<BlockStatePosWrapper> toClear = toProcess;
+      if (worldHealer != null && eoSnapshot == null) { toClear = worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, serverLevel); }
 
       List<BlastPlasterUtil.PendingDrop> pendingRealDrops = new ArrayList<>();
 
@@ -227,35 +230,39 @@ public class ExplosionEventHandler {
         }
       }
 
-      for (BlockStatePosWrapper wrapper : toProcess) {
-        BlockPos pos = wrapper.getPos();
-        long last = lastProcessedPositions.getOrDefault(pos, 0L);
-        if (currentTick - last < 5) { continue; }
-        lastProcessedPositions.put(pos, currentTick);
+      BlastPlasterUtil.setDtDestroyIgnored(true);
+      try {
+        for (BlockStatePosWrapper wrapper : toClear) {
+          BlockPos pos = wrapper.getPos();
+          long last = lastProcessedPositions.getOrDefault(pos, 0L);
+          if (currentTick - last < 5) { continue; }
+          lastProcessedPositions.put(pos, currentTick);
 
-        BlockState state = wrapper.getState();
+          BlockState state = wrapper.getState();
 
-        if (effectiveMode == ExplosionMode.EJECT_DROPS && !(forcePlayerTNTDrops || isCreeper)) {
-          if (state.getBlock() == Blocks.TNT) { continue; }
-          if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false); }
-          else {
-            state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
-            BlockEntity be = serverLevel.getBlockEntity(pos);
-            LootParams.Builder builder = new LootParams.Builder(serverLevel)
-                    .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                    .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
-                    .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
-                    .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder)
-                    .withParameter(LootContextParams.EXPLOSION_RADIUS, Math.max(3.0F, (float) Math.sqrt(toProcess.size()) / 2.0F));
-            for (ItemStack stack : state.getDrops(builder)) {
-              if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, false)); }
+          if (effectiveMode == ExplosionMode.EJECT_DROPS && !(forcePlayerTNTDrops || isCreeper)) {
+            if (state.getBlock() == Blocks.TNT) { continue; }
+            if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false); }
+            else {
+              state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
+              BlockEntity be = serverLevel.getBlockEntity(pos);
+              LootParams.Builder builder = new LootParams.Builder(serverLevel)
+                      .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                      .withParameter(LootContextParams.TOOL, ItemStack.EMPTY)
+                      .withOptionalParameter(LootContextParams.BLOCK_ENTITY, be)
+                      .withOptionalParameter(LootContextParams.THIS_ENTITY, exploder)
+                      .withParameter(LootContextParams.EXPLOSION_RADIUS, Math.max(3.0F, (float) Math.sqrt(toProcess.size()) / 2.0F));
+              for (ItemStack stack : state.getDrops(builder)) {
+                if (!stack.isEmpty()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), stack, false)); }
+              }
             }
           }
-        }
 
-        float visualChance = BlastPlasterUtil.getVisualSpawnChance(isCreeper, false);
-        BlastPlasterUtil.finalizeExplodedBlock(serverLevel, pos, state, effectiveMode, false, visualChance);
+          float visualChance = BlastPlasterUtil.getVisualSpawnChance(isCreeper, false);
+          BlastPlasterUtil.finalizeExplodedBlock(serverLevel, pos, state, effectiveMode, false, visualChance);
+        }
       }
+      finally { BlastPlasterUtil.setDtDestroyIgnored(false); }
 
       if (!pendingRealDrops.isEmpty()) {
         int nextTick = serverLevel.getServer().getTickCount() + 2;
@@ -390,14 +397,19 @@ public class ExplosionEventHandler {
     int duration = Config.getExplosionSmokeDuration();
     int particleCount = Config.getExplosionSmokeParticleCount();
     int burstInterval = 15;
-    int numBursts = Math.max(1, duration / burstInterval);
+    final int numBursts = Math.max(1, duration / burstInterval);
+    BlastPlaster.debug("Smoke: count {}, duration {}, {} bursts scheduled from tick {}", particleCount, duration, numBursts, level.getServer().getTickCount());
     int baseTick = level.getServer().getTickCount();
 
     for (int i = 0; i < numBursts; i++) {
       final int delay = i * burstInterval;
       final int smokeCount = (i == 0) ? particleCount * 2 : particleCount;
       final double yOffset = 0.25 + (i * 0.06);
-      level.getServer().tell(new TickTask(baseTick + delay, () -> level.sendParticles(ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, center.x, center.y + yOffset, center.z, smokeCount, 1.2, 0.7, 1.2, 0.04)));
+      final int burstIndex = i;
+      level.getServer().tell(new TickTask(baseTick + delay, () -> {
+        BlastPlaster.debug("Smoke burst {} of {}: {} particles at server tick {}", burstIndex + 1, numBursts, smokeCount, level.getServer().getTickCount());
+        level.sendParticles(ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, center.x, center.y + yOffset, center.z, smokeCount, 1.2, 0.7, 1.2, 0.04);
+      }));
     }
   }
 

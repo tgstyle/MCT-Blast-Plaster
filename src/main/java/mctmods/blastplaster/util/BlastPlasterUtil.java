@@ -23,9 +23,11 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
+import com.ferreusveritas.dynamictrees.DynamicTrees;
 import com.ferreusveritas.dynamictrees.api.TreeHelper;
 import com.ferreusveritas.dynamictrees.block.FruitBlock;
 import com.ferreusveritas.dynamictrees.block.PodBlock;
+import com.ferreusveritas.dynamictrees.block.branch.BranchBlock;
 import com.ferreusveritas.dynamictrees.block.branch.SurfaceRootBlock;
 import com.ferreusveritas.dynamictrees.block.branch.TrunkShellBlock;
 import java.util.ArrayList;
@@ -280,6 +282,11 @@ public class BlastPlasterUtil {
             double strength = 0.18 + level.random.nextDouble() * 0.22;
             entity.setDeltaMovement(dx / len * strength, dy / len * strength, dz / len * strength);
         }
+    }
+
+    public static void setDtDestroyIgnored(boolean ignored) {
+        if (!DT_LOADED) { return; }
+        BranchBlock.destroyMode = ignored ? DynamicTrees.DestroyMode.IGNORE : DynamicTrees.DestroyMode.SLOPPY;
     }
 
     public static void clearExplodedBlock(ServerLevel level, BlockPos pos) {

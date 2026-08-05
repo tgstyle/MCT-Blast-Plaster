@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
+import net.minecraft.world.level.block.HugeMushroomBlock;
 import net.minecraft.world.level.block.VineBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -86,12 +87,13 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
   }
 
-  public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level) { prepareAndScheduleHealing(toHeal, affectedPos, level, 0); }
+  public List<BlockStatePosWrapper> prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level) { return prepareAndScheduleHealing(toHeal, affectedPos, level, 0); }
 
-  public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level, int extraDelay) {
-    if (toHeal.isEmpty()) { return; }
+  public List<BlockStatePosWrapper> prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level, int extraDelay) {
+    if (toHeal.isEmpty()) { return toHeal; }
 
     addMultiBlockStructures(toHeal, affectedPos, level);
+    List<BlockStatePosWrapper> scheduled = new ArrayList<>(toHeal);
 
     int currentDelay = Config.getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
     List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
@@ -206,6 +208,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
 
     dirtyFlag = true;
+    return scheduled;
   }
 
   private int scheduleLayeredHealing(List<BlockStatePosWrapper> blocks, int baseDelay) {
@@ -438,6 +441,8 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
 
+    addHugeMushrooms(toHeal, affectedPos, level);
+
     if (!isDtLoaded || !didDtExpansion) {
       Set<TagKey<Block>> logTagsFound = new HashSet<>();
       for (BlockStatePosWrapper w : toHeal) {
@@ -572,7 +577,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
                   || totalExtra > MAX_EXTRA_BLOCKS
                   || leafLogRatio < MIN_LEAF_LOG_RATIO
                   || confidence < MIN_TREE_CONFIDENCE
-                  || isHollowStructure(allLogs)) { continue; }
+                  || isHollowStructure(allLogs, level)) { continue; }
 
           for (BlockPos p : allLogs) {
             if (!affectedPos.contains(p)) {
@@ -882,16 +887,136 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     return min == Integer.MAX_VALUE ? 999 : min;
   }
 
-  private boolean isHollowStructure(Set<BlockPos> allLogs) {
+  private void addHugeMushrooms(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level) {
+    Deque<BlockPos> queue = new ArrayDeque<>();
+    Set<BlockPos> visited = new HashSet<>();
+    for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
+      if (w.getState().getBlock() instanceof HugeMushroomBlock) {
+        if (visited.add(w.getPos())) { queue.add(w.getPos()); }
+      }
+    }
+    if (queue.isEmpty()) { return; }
+
+    Set<BlockPos> extras = new HashSet<>();
+    int cap = Config.getMaxTreeSize();
+    while (!queue.isEmpty() && extras.size() < cap) {
+      BlockPos pos = queue.poll();
+      for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
+        BlockPos adj = pos.offset(side);
+        if (!visited.add(adj)) { continue; }
+        if (affectedPos.contains(adj)) { continue; }
+        if (level.getBlockState(adj).getBlock() instanceof HugeMushroomBlock) {
+          extras.add(adj);
+          queue.add(adj);
+        }
+      }
+    }
+
+    if (!extras.isEmpty()) { BlastPlaster.debug("Huge mushroom expansion added {} blocks", extras.size()); }
+    for (BlockPos p : extras) {
+      if (!affectedPos.contains(p)) {
+        toHeal.add(new BlockStatePosWrapper(level, p, level.getBlockState(p)));
+        affectedPos.add(p);
+      }
+    }
+  }
+
+  private boolean isHollowStructure(Set<BlockPos> allLogs, Level level) {
     Map<Integer, List<BlockPos>> logsByY = new HashMap<>();
     for (BlockPos p : allLogs) { logsByY.computeIfAbsent(p.getY(), ignored -> new ArrayList<>()).add(p); }
 
-    for (List<BlockPos> slice : logsByY.values()) {
+    BlastPlaster.debug("Hollow check v3: {} logs across {} slices", allLogs.size(), logsByY.size());
+    Map<Integer, Set<Long>> enclosedByY = new HashMap<>();
+    for (Map.Entry<Integer, List<BlockPos>> entry : logsByY.entrySet()) {
+      List<BlockPos> slice = entry.getValue();
       if (slice.size() < 9) { continue; }
-      int connectedHorizontal = countMaxHorizontalCluster(slice);
-      if (connectedHorizontal >= 7) { return true; }
+      int cluster = countMaxHorizontalCluster(slice);
+      if (cluster < 7) { continue; }
+      Set<Long> enclosed = enclosedCells(slice);
+      BlastPlaster.debug("Hollow check v3: slice y {} size {} cluster {} enclosed {}", entry.getKey(), slice.size(), cluster, enclosed.size());
+      if (!enclosed.isEmpty()) { enclosedByY.put(entry.getKey(), enclosed); }
+    }
+
+    Map<Long, Integer> columnTops = new HashMap<>();
+    for (Map.Entry<Integer, Set<Long>> entry : enclosedByY.entrySet()) {
+      Set<Long> above = enclosedByY.get(entry.getKey() + 1);
+      if (above == null) { continue; }
+      for (Long cell : entry.getValue()) {
+        if (!above.contains(cell)) { continue; }
+        Integer top = columnTops.get(cell);
+        if (top == null || top < entry.getKey() + 1) { columnTops.put(cell, entry.getKey() + 1); }
+      }
+    }
+    if (columnTops.isEmpty()) {
+      BlastPlaster.debug("Hollow check v3: no persistent enclosed columns, verdict false");
+      return false;
+    }
+
+    int roofedColumns = 0;
+    for (Map.Entry<Long, Integer> column : columnTops.entrySet()) {
+      int x = (int) (column.getKey() >> 32);
+      int z = column.getKey().intValue();
+      boolean roofed = hasSolidNonLeafRoof(level, x, column.getValue(), z);
+      BlastPlaster.debug("Hollow check v3: column {} {} top y {} roofed {}", x, z, column.getValue(), roofed);
+      if (roofed) { roofedColumns++; }
+      if (roofedColumns >= 3) {
+        BlastPlaster.debug("Hollow check v3: verdict true, {} roofed columns", roofedColumns);
+        return true;
+      }
+    }
+    BlastPlaster.debug("Hollow check v3: verdict false, {} roofed columns", roofedColumns);
+    return false;
+  }
+
+  private boolean hasSolidNonLeafRoof(Level level, int x, int topY, int z) {
+    for (int dy = 1; dy <= 4; dy++) {
+      BlockPos pos = new BlockPos(x, topY + dy, z);
+      BlockState state = level.getBlockState(pos);
+      if (state.getCollisionShape(level, pos).isEmpty()) { continue; }
+      return !(state.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock) && !(BlastPlasterUtil.DT_LOADED && TreeHelper.isLeaves(state));
     }
     return false;
+  }
+
+  private Set<Long> enclosedCells(List<BlockPos> slice) {
+    int minX = Integer.MAX_VALUE;
+    int maxX = Integer.MIN_VALUE;
+    int minZ = Integer.MAX_VALUE;
+    int maxZ = Integer.MIN_VALUE;
+    for (BlockPos p : slice) {
+      int x = p.getX();
+      int z = p.getZ();
+      if (x < minX) { minX = x; }
+      if (x > maxX) { maxX = x; }
+      if (z < minZ) { minZ = z; }
+      if (z > maxZ) { maxZ = z; }
+    }
+    int width = maxX - minX + 3;
+    int depth = maxZ - minZ + 3;
+    boolean[][] log = new boolean[width][depth];
+    for (BlockPos p : slice) { log[p.getX() - minX + 1][p.getZ() - minZ + 1] = true; }
+    boolean[][] reached = new boolean[width][depth];
+    Deque<int[]> queue = new ArrayDeque<>();
+    reached[0][0] = true;
+    queue.add(new int[] { 0, 0 });
+    while (!queue.isEmpty()) {
+      int[] cell = queue.poll();
+      for (int[] dir : new int[][] { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) {
+        int nx = cell[0] + dir[0];
+        int nz = cell[1] + dir[1];
+        if (nx < 0 || nz < 0 || nx >= width || nz >= depth) { continue; }
+        if (log[nx][nz] || reached[nx][nz]) { continue; }
+        reached[nx][nz] = true;
+        queue.add(new int[] { nx, nz });
+      }
+    }
+    Set<Long> enclosed = new HashSet<>();
+    for (int x = 0; x < width; x++) {
+      for (int z = 0; z < depth; z++) {
+        if (!log[x][z] && !reached[x][z]) { enclosed.add((((long) (x + minX - 1)) << 32) | ((z + minZ - 1) & 0xFFFFFFFFL)); }
+      }
+    }
+    return enclosed;
   }
 
   private int countMaxHorizontalCluster(List<BlockPos> slice) {
