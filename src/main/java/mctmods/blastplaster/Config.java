@@ -7,6 +7,8 @@ import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.IStringSerializable;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.world.IBlockAccess;
+import net.minecraft.world.World;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.common.config.Property;
 import net.minecraftforge.oredict.OreDictionary;
@@ -19,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 public class Config {
 
@@ -68,12 +71,81 @@ public class Config {
 
     private Config() {}
 
+    public interface View {
+        default ExplosionMode getExplosionMode() { return Config.getExplosionMode(); }
+
+        default boolean enableFakeTossedBlocks() { return Config.enableFakeTossedBlocks(); }
+
+        default boolean enableExplosionFlash() { return Config.enableExplosionFlash(); }
+
+        default int getExplosionFlashDuration() { return Config.getExplosionFlashDuration(); }
+
+        default int getExplosionFlashLightLevel() { return Config.getExplosionFlashLightLevel(); }
+
+        default int getExplosionFlashParticleCount() { return Config.getExplosionFlashParticleCount(); }
+
+        default int getExplosionFlashPulses() { return Config.getExplosionFlashPulses(); }
+
+        default boolean enableExplosionSmoke() { return Config.enableExplosionSmoke(); }
+
+        default int getExplosionSmokeDuration() { return Config.getExplosionSmokeDuration(); }
+
+        default int getExplosionSmokeParticleCount() { return Config.getExplosionSmokeParticleCount(); }
+
+        default boolean playerTNTAlwaysDrops() { return Config.playerTNTAlwaysDrops(); }
+
+        default boolean playerTNTDropFullBlocks() { return Config.playerTNTDropFullBlocks(); }
+
+        default boolean healCreepers() { return Config.healCreepers(); }
+
+        default boolean healNonPlayerTNT() { return Config.healNonPlayerTNT(); }
+
+        default boolean healWither() { return Config.healWither(); }
+
+        default boolean healAll() { return Config.healAll(); }
+
+        default boolean processPlayerIgnitedTNT() { return Config.processPlayerIgnitedTNT(); }
+
+        default List<String> getCustomEntitiesToHeal() { return Config.getCustomEntitiesToHeal(); }
+
+        default int getMinimumTicksBeforeHeal() { return Config.getMinimumTicksBeforeHeal(); }
+
+        default int getRandomTickVar() { return Config.getRandomTickVar(); }
+
+        default boolean isOverride() { return Config.isOverride(); }
+
+        default boolean healFullTrees() { return Config.healFullTrees(); }
+
+        default boolean dtSpecialDrops() { return Config.dtSpecialDrops(); }
+
+        default int getMaxTreeSize() { return Config.getMaxTreeSize(); }
+
+        default boolean enableDropSuppression() { return Config.enableDropSuppression(); }
+
+        default boolean preventMobDrops() { return Config.preventMobDrops(); }
+    }
+
+    private static final View GLOBAL = new View() {};
+    private static Function<World, View> provider;
+
+    @SuppressWarnings("unused")
+    public static void provider(Function<World, View> now) { provider = now; }
+
+    public static View view(World world) {
+        if (provider == null || world == null) { return GLOBAL; }
+
+        View given = provider.apply(world);
+        return given == null ? GLOBAL : given;
+    }
+
+    public static View view(IBlockAccess access) { return access instanceof World ? view((World) access) : GLOBAL; }
+
     public static void syncConfig() {
         Configuration config = BlastPlaster.config;
         try {
             config.load();
 
-            config.setCategoryComment(CAT_EXPLOSION, "Explosion mode and visuals");
+            config.setCategoryComment(CAT_EXPLOSION, "Explosion mode and visuals. When MCT Resource Data Pack Loader is installed and driving Blast Plaster, packs override these values, per dimension if they choose; keys no pack sets keep the values here");
             Property modeProperty = config.get(CAT_EXPLOSION, "ExplosionMode", ExplosionMode.HEAL.name(),
                     "HEAL (default): blocks disappear then slowly restore + fake tossed blocks fly out\n"
                             + "EJECT_DROPS: blocks gone forever, real drops with 1/3 chance per block (exactly matching vanilla creeper), otherwise fake tossed block instead (fakes exactly make up the remaining ~2/3, 100% visual coverage)\n"
@@ -103,7 +175,7 @@ public class Config {
             playerTNTDropFullBlocks = config.get(CAT_EXPLOSION, "PlayerTNTDropFullBlocks", false,
                     "If true, player-ignited TNT drops the full block item (silk-touch like). Only applies when PlayerTNTAlwaysDrops=true and effective mode is EJECT_DROPS. DT blocks prioritize DynamicTreesSpecialDrops if enabled.").getBoolean();
 
-            config.setCategoryComment(CAT_HEALING, "Healing settings (HEAL mode only)");
+            config.setCategoryComment(CAT_HEALING, "Healing settings (HEAL mode only). When MCT Resource Data Pack Loader is installed and driving Blast Plaster, packs override these values, per dimension if they choose; keys no pack sets keep the values here");
             minTicksBeforeHeal = config.get(CAT_HEALING, "TickStartDelay", 600,
                     "Minimum ticks before healing begins after explosion. Only used in HEAL mode.", 1, 600000).getInt();
             randomTickVar = config.get(CAT_HEALING, "TickRandomInterval", 200,
@@ -113,7 +185,7 @@ public class Config {
             healFullTrees = config.get(CAT_HEALING, "HealFullTrees", true,
                     "When a tree is partially exploded, heal the entire tree. Enables tree expansion logic.").getBoolean();
 
-            config.setCategoryComment(CAT_SOURCES, "Which explosions to process");
+            config.setCategoryComment(CAT_SOURCES, "Which explosions to process. When MCT Resource Data Pack Loader is installed and driving Blast Plaster, packs override these values, per dimension if they choose; keys no pack sets keep the values here");
             healCreepers = config.get(CAT_SOURCES, "HealCreepers", true,
                     "Process creeper explosions according to selected mode.").getBoolean();
             healNonPlayerTNT = config.get(CAT_SOURCES, "HealNonPlayerTNT", true,
@@ -128,13 +200,13 @@ public class Config {
             CUSTOM_ENTITIES.addAll(Arrays.asList(config.get(CAT_SOURCES, "CustomEntitiesToHeal", new String[0],
                     "Extra entity IDs (modid:entity) whose explosions should be processed.").getStringList()));
 
-            config.setCategoryComment(CAT_EJECT, "EJECT_DROPS settings");
+            config.setCategoryComment(CAT_EJECT, "EJECT_DROPS settings. When MCT Resource Data Pack Loader is installed and driving Blast Plaster, packs override these values, per dimension if they choose; keys no pack sets keep the values here");
             dtSpecialDrops = config.get(CAT_EJECT, "DynamicTreesSpecialDrops", true,
                     "For Dynamic Trees blocks in EJECT_DROPS mode: drop the tree's primitive log + sticks instead of full DT items. Applies to all EJECT_DROPS including player TNT (overrides full blocks intent for DT).").getBoolean();
             enableDropSuppression = config.get(CAT_EJECT, "EnableDropSuppression", true,
                     "Prevents ANY stray item entities (seeds, sticks, vines, etc.) from ever spawning in HEAL or VISUAL_TOSS modes by cancelling them the instant they try to join the world. This is the core safety system for non-EJECT modes (no late scavenging anymore). Default true.").getBoolean();
 
-            config.setCategoryComment(CAT_MOB_DROPS, "Mob drops");
+            config.setCategoryComment(CAT_MOB_DROPS, "Mob drops. When MCT Resource Data Pack Loader is installed and driving Blast Plaster, packs override these values, per dimension if they choose; keys no pack sets keep the values here");
             preventMobDrops = config.get(CAT_MOB_DROPS, "PreventMobDrops", false,
                     "If true, prevent ALL drops from mobs/entities killed by ANY explosion (in every mode). Vanilla drops are cancelled. Default false (allow drops - they are automatically protected from suppression so they survive in HEAL/VISUAL_TOSS modes).").getBoolean();
 

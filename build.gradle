@@ -111,8 +111,23 @@ tasks.register('bumpVersion') {
 }
 
 build.dependsOn bumpVersion
+tasks.register('devJar', Jar) {
+    dependsOn classes
+    from sourceSets.main.output
+    archiveClassifier = 'dev'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+artifacts {
+    archives devJar
+}
+
+tasks.named('reobfJar').configure { mustRunAfter tasks.named('devJar') }
+
 processResources.dependsOn bumpVersion
 jar.dependsOn bumpVersion
+devJar.dependsOn bumpVersion
+assemble.dependsOn devJar
 
 processResources {
     inputs.property('version', providers.provider { "${modversion}.${version_buildnumber}" })

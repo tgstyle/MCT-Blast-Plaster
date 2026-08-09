@@ -27,6 +27,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Explosion;
+import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityJoinWorldEvent;
@@ -135,12 +136,12 @@ public class ExplosionEventHandler {
 
         boolean isCreeper = exploder instanceof EntityCreeper;
 
-        boolean processThis = Config.healAll() || (Config.processPlayerIgnitedTNT() && isPlayerIgnitedTNT);
+        boolean processThis = Config.view(world).healAll() || (Config.view(world).processPlayerIgnitedTNT() && isPlayerIgnitedTNT);
 
         if (!processThis) {
-            if (Config.healCreepers() && isCreeper) { processThis = true; }
-            if (!processThis && Config.healWither() && (exploder instanceof EntityWither || exploder instanceof EntityWitherSkull)) { processThis = true; }
-            if (!processThis && Config.healNonPlayerTNT()) {
+            if (Config.view(world).healCreepers() && isCreeper) { processThis = true; }
+            if (!processThis && Config.view(world).healWither() && (exploder instanceof EntityWither || exploder instanceof EntityWitherSkull)) { processThis = true; }
+            if (!processThis && Config.view(world).healNonPlayerTNT()) {
                 boolean nonPlayerCaused = !(indirect instanceof EntityPlayer);
                 boolean isPrimedTnt = exploder instanceof EntityTNTPrimed;
                 boolean isCustomEntity = isCustomEntity(exploder, indirect);
@@ -157,15 +158,15 @@ public class ExplosionEventHandler {
         Long2LongOpenHashMap processed = lastProcessedPositions.computeIfAbsent(world.provider.getDimension(), k -> newProcessedMap());
         processed.long2LongEntrySet().removeIf(e -> currentTick - e.getLongValue() > 600L);
 
-        if (Config.enableExplosionFlash()) { spawnImmediateExplosionVisuals(world, explosionCenter); }
-        if (Config.enableExplosionSmoke()) { spawnExplosionSmoke(world, explosionCenter); }
+        if (Config.view(world).enableExplosionFlash()) { spawnImmediateExplosionVisuals(world, explosionCenter); }
+        if (Config.view(world).enableExplosionSmoke()) { spawnExplosionSmoke(world, explosionCenter); }
 
-        ExplosionMode mode = Config.getExplosionMode();
-        ExplosionMode effectiveMode = (isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops()) ? ExplosionMode.EJECT_DROPS : mode;
-        if (Config.healAll()) { effectiveMode = ExplosionMode.HEAL; }
+        ExplosionMode mode = Config.view(world).getExplosionMode();
+        ExplosionMode effectiveMode = (isPlayerIgnitedTNT && Config.view(world).playerTNTAlwaysDrops()) ? ExplosionMode.EJECT_DROPS : mode;
+        if (Config.view(world).healAll()) { effectiveMode = ExplosionMode.HEAL; }
         WorldHealerSaveDataSupplier worldHealer = (effectiveMode == ExplosionMode.HEAL) ? BlastPlaster.getWorldHealer(world) : null;
 
-        boolean forcePlayerTNTDrops = isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops();
+        boolean forcePlayerTNTDrops = isPlayerIgnitedTNT && Config.view(world).playerTNTAlwaysDrops();
 
         List<BlockStatePosWrapper> toProcess = new ArrayList<>();
         Set<BlockPos> affectedPos = new HashSet<>();
@@ -183,7 +184,7 @@ public class ExplosionEventHandler {
 
         if (toProcess.isEmpty()) { return; }
 
-        if (Config.healFullTrees()) {
+        if (Config.view(world).healFullTrees()) {
             WorldHealerSaveDataSupplier expansionHealer = BlastPlaster.getWorldHealer(world);
             if (expansionHealer == null) { BlastPlaster.debug("Detonate: tree expansion skipped, no world healer"); }
             else {
@@ -196,7 +197,7 @@ public class ExplosionEventHandler {
         if (effectiveMode != ExplosionMode.EJECT_DROPS) {
             BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, world);
             BlastPlasterUtil.addReedVerticals(toProcess, affectedPos, world);
-            if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos, effectiveMode == ExplosionMode.HEAL); }
+            if (Config.view(world).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos, effectiveMode == ExplosionMode.HEAL); }
         }
 
         event.getAffectedBlocks().removeAll(affectedPos);
@@ -211,8 +212,8 @@ public class ExplosionEventHandler {
                 BlockPos pos = wrapper.getPos();
                 IBlockState state = wrapper.getState();
                 if (state.getBlock() == Blocks.TNT) { continue; }
-                if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, world, pos, state, forcePlayerTNTDrops); }
-                else if (forcePlayerTNTDrops && Config.playerTNTDropFullBlocks()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(centerOf(pos), new ItemStack(state.getBlock(), 1, state.getBlock().damageDropped(state)), true)); }
+                if (BlastPlasterUtil.isDynamicTrees(state) && Config.view(world).dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, world, pos, state, forcePlayerTNTDrops); }
+                else if (forcePlayerTNTDrops && Config.view(world).playerTNTDropFullBlocks()) { pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(centerOf(pos), new ItemStack(state.getBlock(), 1, state.getBlock().damageDropped(state)), true)); }
                 else { addBlockDrops(pendingRealDrops, world, pos, state, forcePlayerTNTDrops); }
             }
         }
@@ -231,7 +232,7 @@ public class ExplosionEventHandler {
 
                 if (effectiveMode == ExplosionMode.EJECT_DROPS && !(forcePlayerTNTDrops || isCreeper)) {
                     if (state.getBlock() == Blocks.TNT) { continue; }
-                    if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, world, pos, state, false); }
+                    if (BlastPlasterUtil.isDynamicTrees(state) && Config.view(world).dtSpecialDrops()) { BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, world, pos, state, false); }
                     else { addBlockDrops(pendingRealDrops, world, pos, state, false); }
                 }
 
@@ -254,7 +255,7 @@ public class ExplosionEventHandler {
 
         BlastPlaster.debug("Detonate: cleared {} of {} blocks, {} pending drops", cleared, toClear.size(), pendingRealDrops.size());
 
-        if (Config.enableExplosionFlash()) { placeTemporaryLight(world, new BlockPos(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
+        if (Config.view(world).enableExplosionFlash()) { placeTemporaryLight(world, new BlockPos(explosionCenter), Config.view(world).getExplosionFlashLightLevel(), Config.view(world).getExplosionFlashDuration()); }
     }
 
     @SubscribeEvent public void onEntityJoinWorld(EntityJoinWorldEvent event) {
@@ -278,7 +279,7 @@ public class ExplosionEventHandler {
 
     @SubscribeEvent public void onLivingDrops(LivingDropsEvent event) {
         if (!event.getSource().isExplosion()) { return; }
-        if (Config.preventMobDrops()) {
+        if (Config.view(event.getEntity().world).preventMobDrops()) {
             event.setCanceled(true);
             return;
         }
@@ -294,7 +295,8 @@ public class ExplosionEventHandler {
     }
 
     private boolean isCustomEntity(Entity exploder, EntityLivingBase indirect) {
-        for (String idStr : Config.getCustomEntitiesToHeal()) {
+        World source = exploder != null ? exploder.world : indirect != null ? indirect.world : null;
+        for (String idStr : Config.view(source).getCustomEntitiesToHeal()) {
             if (idStr == null || idStr.trim().isEmpty()) { continue; }
             ResourceLocation id = new ResourceLocation(idStr.trim());
             if (exploder != null && id.equals(EntityList.getKey(exploder))) { return true; }
@@ -315,8 +317,8 @@ public class ExplosionEventHandler {
     private static Vec3d centerOf(BlockPos pos) { return new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5); }
 
     private static void spawnExplosionSmoke(WorldServer world, Vec3d center) {
-        int duration = Config.getExplosionSmokeDuration();
-        int particleCount = Config.getExplosionSmokeParticleCount();
+        int duration = Config.view(world).getExplosionSmokeDuration();
+        int particleCount = Config.view(world).getExplosionSmokeParticleCount();
         int burstInterval = 15;
         int numBursts = Math.max(1, duration / burstInterval);
 
@@ -339,8 +341,8 @@ public class ExplosionEventHandler {
         if (currentTick - lastFlashTick.getOrDefault(dimension, -1000L) < 2) { return; }
         lastFlashTick.put(dimension, currentTick);
 
-        int flashCount = Config.getExplosionFlashParticleCount();
-        int pulses = Config.getExplosionFlashPulses();
+        int flashCount = Config.view(world).getExplosionFlashParticleCount();
+        int pulses = Config.view(world).getExplosionFlashPulses();
 
         for (int i = 0; i < pulses; i++) {
             final int count = (int) (flashCount * (1.0 - 0.25 * i));

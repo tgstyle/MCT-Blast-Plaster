@@ -23,7 +23,7 @@ import javax.annotation.Nonnull;
         setResistance(6000000.0F);
     }
 
-    @Override public int getLightValue(@Nonnull IBlockState state, @Nonnull IBlockAccess world, @Nonnull BlockPos pos) { return Config.getExplosionFlashLightLevel(); }
+    @Override public int getLightValue(@Nonnull IBlockState state, @Nonnull IBlockAccess world, @Nonnull BlockPos pos) { return Config.view(world).getExplosionFlashLightLevel(); }
 
     @Override public boolean isAir(@Nonnull IBlockState state, @Nonnull IBlockAccess world, @Nonnull BlockPos pos) { return true; }
 

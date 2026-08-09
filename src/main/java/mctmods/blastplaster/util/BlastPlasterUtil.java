@@ -299,9 +299,9 @@ public class BlastPlasterUtil {
 
     public static void finalizeExplodedBlock(WorldServer world, BlockPos pos, IBlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
         if (effectiveMode == Config.ExplosionMode.EJECT_DROPS) {
-            if (!realDropOccurred && Config.enableFakeTossedBlocks() && world.rand.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(world, pos, state); }
+            if (!realDropOccurred && Config.view(world).enableFakeTossedBlocks() && world.rand.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(world, pos, state); }
         }
-        else if (Config.enableFakeTossedBlocks() && (effectiveMode == Config.ExplosionMode.HEAL || effectiveMode == Config.ExplosionMode.VISUAL_TOSS) && world.rand.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(world, pos, state); }
+        else if (Config.view(world).enableFakeTossedBlocks() && (effectiveMode == Config.ExplosionMode.HEAL || effectiveMode == Config.ExplosionMode.VISUAL_TOSS) && world.rand.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(world, pos, state); }
         clearExplodedBlock(world, pos);
     }
 

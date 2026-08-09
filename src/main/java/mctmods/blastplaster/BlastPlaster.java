@@ -31,6 +31,7 @@ import java.io.File;
 		name = BlastPlaster.MODNAME,
 		useMetadata = true,
 		acceptedMinecraftVersions = "[1.12.2,1.13)",
+		acceptableRemoteVersions = "*",
 		dependencies =
 				"required-after:forge@[14.23.+,);" +
 						"after:dynamictrees;")

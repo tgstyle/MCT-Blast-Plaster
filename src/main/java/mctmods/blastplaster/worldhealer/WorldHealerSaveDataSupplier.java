@@ -93,7 +93,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         addMultiBlockStructures(toHeal, affectedPos, world);
         List<BlockStatePosWrapper> scheduled = new ArrayList<>(toHeal);
 
-        int currentDelay = Config.getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
+        int currentDelay = Config.view(world).getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
         List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
 
         List<BlockStatePosWrapper> dtSurfaceRoots = new ArrayList<>();
@@ -209,7 +209,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
             layer.add(wrapper);
         }
         int currentDelay = baseDelay;
-        int var = Config.getRandomTickVar();
+        int var = Config.view(world).getRandomTickVar();
         for (List<BlockStatePosWrapper> layer : layers.values()) {
             int layerDelay = currentDelay;
             if (layer.size() == 1) {
@@ -352,7 +352,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
                     for (BlockPos wood : dtTreePos) {
                         if (rootVisited.add(wood)) { rootQueue.add(wood); }
                     }
-                    int rootCap = Config.getMaxTreeSize();
+                    int rootCap = Config.view(world).getMaxTreeSize();
                     int rootsFound = 0;
                     while (!rootQueue.isEmpty() && rootsFound < rootCap) {
                         BlockPos rp = rootQueue.poll();
@@ -396,8 +396,8 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
                     }
 
                     int totalBlocks = dtTreePos.size() + filteredLeaves.size();
-                    if (totalBlocks > Config.getMaxTreeSize()) {
-                        BlastPlaster.debug("Skipped huge DT tree expansion ({} blocks > max {})", totalBlocks, Config.getMaxTreeSize());
+                    if (totalBlocks > Config.view(world).getMaxTreeSize()) {
+                        BlastPlaster.debug("Skipped huge DT tree expansion ({} blocks > max {})", totalBlocks, Config.view(world).getMaxTreeSize());
                         continue;
                     }
 
@@ -550,8 +550,8 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
 
                     float confidence = calculateTreeConfidence(allLogs, extraLeaves, world);
 
-                    if (allLogs.size() + extraLeaves.size() > Config.getMaxTreeSize()) {
-                        BlastPlaster.debug("Skipped huge vanilla tree cluster ({} blocks > max {})", allLogs.size() + extraLeaves.size(), Config.getMaxTreeSize());
+                    if (allLogs.size() + extraLeaves.size() > Config.view(world).getMaxTreeSize()) {
+                        BlastPlaster.debug("Skipped huge vanilla tree cluster ({} blocks > max {})", allLogs.size() + extraLeaves.size(), Config.view(world).getMaxTreeSize());
                         continue;
                     }
 
@@ -582,7 +582,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
             }
         }
 
-        if (Config.healFullTrees()) { addConnectedVines(toHeal, affectedPos, world); }
+        if (Config.view(world).healFullTrees()) { addConnectedVines(toHeal, affectedPos, world); }
     }
 
     private void addHugeMushrooms(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, World world) {
@@ -596,7 +596,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         if (queue.isEmpty()) { return; }
 
         Set<BlockPos> extras = new HashSet<>();
-        int cap = Config.getMaxTreeSize();
+        int cap = Config.view(world).getMaxTreeSize();
         while (!queue.isEmpty() && extras.size() < cap) {
             BlockPos pos = queue.poll();
             for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
@@ -636,7 +636,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         if (queue.isEmpty()) { return 0; }
 
         Set<BlockPos> severedWood = new HashSet<>();
-        int cap = Config.getMaxTreeSize();
+        int cap = Config.view(world).getMaxTreeSize();
 
         while (!queue.isEmpty() && severedWood.size() < cap) {
             BlockPos pos = queue.poll();
@@ -1156,7 +1156,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         boolean isEmpty = currentState.getMaterial() == Material.AIR;
         boolean hasFluid = currentState.getMaterial().isLiquid();
 
-        if (Config.isOverride() || isEmpty || hasFluid) { restore(pos, restoreState, blockData); }
+        if (Config.view(world).isOverride() || isEmpty || hasFluid) { restore(pos, restoreState, blockData); }
     }
 
     private void restore(BlockPos pos, IBlockState state, BlockStatePosWrapper blockData) {
