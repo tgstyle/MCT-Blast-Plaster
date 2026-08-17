@@ -195,6 +195,12 @@ public class BlastPlasterUtil {
         toProcess.addAll(extras);
     }
 
+    @SuppressWarnings("unused") public static boolean isTreeWood(IBlockState state) {
+        if (Config.isLog(state)) { return true; }
+        if (!DT_LOADED) { return false; }
+        return TreeHelper.isBranch(state) || state.getBlock() instanceof BlockTrunkShell;
+    }
+
     public static boolean isDynamicTrees(IBlockState state) {
         if (!DT_LOADED) { return false; }
         return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state);

@@ -6,6 +6,7 @@ import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.helper.TickContainer;
 import mctmods.blastplaster.helper.TickingHealList;
 import mctmods.blastplaster.util.BlastPlasterUtil;
+import mctmods.blastplaster.util.TreeCollector;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockBed;
@@ -66,7 +67,6 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
     private static final float MIN_TREE_CONFIDENCE = 0.65f;
     private static final float MIN_LEAVES_PER_SEED = 0.8f;
     private static final int LEAF_BRUTE_RADIUS = 5;
-    private static final int MAX_LEAF_DISTANCE_FOR_CHECK = 7;
     private final TickingHealList healTask = new TickingHealList();
     private World world;
 
@@ -458,84 +458,9 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
 
                     if (clusterSize < MIN_EXPLODED_LOGS_FOR_EXPANSION && originalSize != 1) { continue; }
 
-                    Set<BlockPos> allLogs = new HashSet<>(seedSet);
-                    Set<BlockPos> extraLeaves = new HashSet<>();
-                    Set<BlockPos> visited = new HashSet<>(seedSet);
-                    Deque<BlockPos> openSet = new ArrayDeque<>(seedSet);
-                    Map<BlockPos, Integer> distanceMap = new HashMap<>();
-                    for (BlockPos seed : seedSet) { distanceMap.put(seed, 0); }
-
-                    while (!openSet.isEmpty()) {
-                        BlockPos pos = openSet.poll();
-                        int dist = distanceMap.get(pos);
-
-                        for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
-                            BlockPos adj = pos.add(side);
-                            if (visited.contains(adj)) { continue; }
-                            IBlockState adjState = world.getBlockState(adj);
-                            int newDist = dist + 1;
-                            if (newDist > TREE_DISTANCE_CAP) { continue; }
-
-                            if (logKey.equals(Config.getLogKey(adjState))) {
-                                visited.add(adj);
-                                openSet.add(adj);
-                                allLogs.add(adj);
-                                distanceMap.put(adj, newDist);
-                            }
-                            else if (leafKey.equals(Config.getLeavesKey(adjState))) {
-                                if (!isPersistentLeaf(adjState)) {
-                                    visited.add(adj);
-                                    extraLeaves.add(adj);
-                                    distanceMap.put(adj, newDist);
-                                }
-                            }
-                        }
-                    }
-
-                    for (BlockPos logPos : allLogs) {
-                        for (int dx = -LEAF_BRUTE_RADIUS; dx <= LEAF_BRUTE_RADIUS; dx++) {
-                            for (int dy = -LEAF_BRUTE_RADIUS; dy <= LEAF_BRUTE_RADIUS; dy++) {
-                                for (int dz = -LEAF_BRUTE_RADIUS; dz <= LEAF_BRUTE_RADIUS; dz++) {
-                                    if (dx == 0 && dy == 0 && dz == 0) { continue; }
-                                    BlockPos adj = logPos.add(dx, dy, dz);
-                                    if (visited.contains(adj)) { continue; }
-                                    IBlockState adjState = world.getBlockState(adj);
-                                    if (leafKey.equals(Config.getLeavesKey(adjState)) && !isPersistentLeaf(adjState)) {
-                                        visited.add(adj);
-                                        extraLeaves.add(adj);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    int maxLeafSteps = MAX_LEAF_DISTANCE_FOR_CHECK - LEAF_BRUTE_RADIUS;
-                    Deque<BlockPos> leafQueue = new ArrayDeque<>(extraLeaves);
-                    Map<BlockPos, Integer> leafDepth = new HashMap<>();
-                    for (BlockPos seed : extraLeaves) { leafDepth.put(seed, 0); }
-                    while (!leafQueue.isEmpty()) {
-                        BlockPos leafPos = leafQueue.poll();
-                        int depth = leafDepth.get(leafPos);
-                        if (depth >= maxLeafSteps) { continue; }
-                        for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
-                            BlockPos adj = leafPos.add(side);
-                            if (visited.contains(adj)) { continue; }
-                            IBlockState adjState = world.getBlockState(adj);
-                            if (!leafKey.equals(Config.getLeavesKey(adjState))) { continue; }
-                            if (isPersistentLeaf(adjState)) { continue; }
-                            visited.add(adj);
-                            extraLeaves.add(adj);
-                            leafDepth.put(adj, depth + 1);
-                            leafQueue.add(adj);
-                        }
-                    }
-
-                    Set<BlockPos> filteredLeaves = new HashSet<>();
-                    for (BlockPos leaf : extraLeaves) {
-                        int dOur = minManhattanToSet(leaf, allLogs);
-                        if (!hasCloserForeignLog(leaf, world, logKey, allLogs, dOur)) { filteredLeaves.add(leaf); }
-                    }
-                    extraLeaves = filteredLeaves;
+                    TreeCollector.Tree tree = TreeCollector.expand(world, logKey, seedSet, Integer.MAX_VALUE);
+                    Set<BlockPos> allLogs = tree.logs;
+                    Set<BlockPos> extraLeaves = tree.leaves;
 
                     int destroyedLeafCount = 0;
                     for (BlockStatePosWrapper w : toHeal) {
@@ -898,24 +823,6 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         return min;
     }
 
-    private boolean hasCloserForeignLog(BlockPos leaf, World world, String logKey, Set<BlockPos> ourLogs, int ourDist) {
-        int budget = ourDist - 1;
-        if (budget < 0) { return false; }
-        BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
-        for (int dx = -Math.min(8, budget); dx <= Math.min(8, budget); dx++) {
-            int spanY = Math.min(8, budget - Math.abs(dx));
-            for (int dy = -spanY; dy <= spanY; dy++) {
-                int spanZ = Math.min(8, budget - Math.abs(dx) - Math.abs(dy));
-                for (int dz = -spanZ; dz <= spanZ; dz++) {
-                    probe.setPos(leaf.getX() + dx, leaf.getY() + dy, leaf.getZ() + dz);
-                    if (ourLogs.contains(probe)) { continue; }
-                    if (logKey.equals(Config.getLogKey(world.getBlockState(probe)))) { return true; }
-                }
-            }
-        }
-        return false;
-    }
-
     private boolean isHollowStructure(Set<BlockPos> allLogs, World world) {
         Map<Integer, List<BlockPos>> logsByY = new HashMap<>();
         for (BlockPos p : allLogs) {
@@ -1085,11 +992,6 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
                 affectedPos.add(p);
             }
         }
-    }
-
-    private boolean isPersistentLeaf(IBlockState state) {
-        if (state.getPropertyKeys().contains(BlockLeaves.DECAYABLE)) { return !state.getValue(BlockLeaves.DECAYABLE); }
-        return false;
     }
 
     private int getLeafDistance(IBlockState state) {
