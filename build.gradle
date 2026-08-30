@@ -4,7 +4,7 @@ import groovy.json.JsonSlurper
 plugins {
     id 'idea'
     id 'maven-publish'
-    id 'net.neoforged.gradle.userdev' version '7.1.37'
+    id 'net.neoforged.gradle.userdev' version '7.1.38'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.6'
     id 'eclipse'
 }
@@ -122,7 +122,7 @@ repositories {
 
 dependencies {
     implementation "net.neoforged:neoforge:${version_neoforge}"
-    implementation "curse.maven:${version_dynamictrees_curse}"
+    compileOnly "curse.maven:${version_dynamictrees_curse}"
 }
 
 def customGradle = rootProject.file('custom.gradle')
