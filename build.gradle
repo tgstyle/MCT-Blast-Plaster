@@ -167,6 +167,13 @@ tasks.register('bumpVersion') {
 
 build.dependsOn bumpVersion
 
+tasks.register('devJar', Jar) {
+    dependsOn classes
+    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
+    archiveClassifier.set('dev')
+    from sourceSets.main.output
+}
+
 tasks.register('sourcesJar', Jar) {
     dependsOn classes
     archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
@@ -176,6 +183,7 @@ tasks.register('sourcesJar', Jar) {
 
 artifacts {
     archives sourcesJar
+    archives devJar
 }
 
 void minimizePNGFile(File file) {
@@ -242,6 +250,8 @@ idea {
 processResources.dependsOn bumpVersion
 jar.dependsOn bumpVersion
 sourcesJar.dependsOn bumpVersion
+devJar.dependsOn bumpVersion
+build.dependsOn devJar
 
 jar {
     archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")

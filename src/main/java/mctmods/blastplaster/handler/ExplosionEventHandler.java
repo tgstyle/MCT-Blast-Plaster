@@ -73,6 +73,7 @@ public class ExplosionEventHandler {
   private static final Map<BlockPos, Long> lastProcessedPositions = new HashMap<>();
 
   @SubscribeEvent public void onDetonate(ExplosionEvent.Detonate event) {
+    Level level = event.getLevel();
     if (event.getLevel().isClientSide) { return; }
 
     Explosion explosion = event.getExplosion();
@@ -87,16 +88,16 @@ public class ExplosionEventHandler {
 
     boolean isCreeper = exploder instanceof Creeper;
 
-    boolean processThis = Config.healAll() || (Config.processPlayerIgnitedTNT() && isPlayerIgnitedTNT);
+    boolean processThis = Config.view(level).healAll() || (Config.view(level).processPlayerIgnitedTNT() && isPlayerIgnitedTNT);
 
     if (!processThis) {
-      if (Config.healCreepers() && isCreeper) { processThis = true; }
-      if (!processThis && Config.healWither() && (exploder instanceof WitherBoss || exploder instanceof WitherSkull)) { processThis = true; }
-      if (!processThis && Config.healNonPlayerTNT()) {
+      if (Config.view(level).healCreepers() && isCreeper) { processThis = true; }
+      if (!processThis && Config.view(level).healWither() && (exploder instanceof WitherBoss || exploder instanceof WitherSkull)) { processThis = true; }
+      if (!processThis && Config.view(level).healNonPlayerTNT()) {
         boolean nonPlayerCaused = !(indirect instanceof Player);
         boolean isPrimedTnt = exploder instanceof PrimedTnt;
         boolean isCustomEntity = false;
-        for (String idStr : Config.getCustomEntitiesToHeal()) {
+        for (String idStr : Config.view(level).getCustomEntitiesToHeal()) {
           ResourceLocation id = ResourceLocation.tryParse(idStr);
           if (id != null) {
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(id).orElse(null);
@@ -119,14 +120,14 @@ public class ExplosionEventHandler {
       long currentTick = serverLevel.getGameTime();
       lastProcessedPositions.entrySet().removeIf(e -> currentTick - e.getValue() > 600L);
 
-      if (Config.enableExplosionFlash()) { spawnImmediateExplosionVisuals(serverLevel, explosionCenter); }
-      if (Config.enableExplosionSmoke()) { spawnExplosionSmoke(serverLevel, explosionCenter); }
+      if (Config.view(level).enableExplosionFlash()) { spawnImmediateExplosionVisuals(serverLevel, explosionCenter); }
+      if (Config.view(level).enableExplosionSmoke()) { spawnExplosionSmoke(serverLevel, explosionCenter); }
 
-      ExplosionMode mode = Config.getExplosionMode();
-      ExplosionMode effectiveMode = (isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops()) ? ExplosionMode.EJECT_DROPS : mode;
+      ExplosionMode mode = Config.view(level).getExplosionMode();
+      ExplosionMode effectiveMode = (isPlayerIgnitedTNT && Config.view(level).playerTNTAlwaysDrops()) ? ExplosionMode.EJECT_DROPS : mode;
       WorldHealerSaveDataSupplier worldHealer = (effectiveMode == ExplosionMode.HEAL) ? BlastPlaster.getWorldHealer(serverLevel) : null;
 
-      boolean forcePlayerTNTDrops = isPlayerIgnitedTNT && Config.playerTNTAlwaysDrops();
+      boolean forcePlayerTNTDrops = isPlayerIgnitedTNT && Config.view(level).playerTNTAlwaysDrops();
       boolean indirectIsPlayer = indirect instanceof Player;
 
       var toProcess = new ArrayList<BlockStatePosWrapper>();
@@ -140,7 +141,7 @@ public class ExplosionEventHandler {
         affectedPos.add(pos);
       }
 
-      if (Config.healFullTrees()) {
+      if (Config.view(level).healFullTrees()) {
         addFullTreeExpansion(toProcess, affectedPos, serverLevel);
       }
 
@@ -153,7 +154,7 @@ public class ExplosionEventHandler {
         BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, serverLevel);
       }
 
-      if (Config.enableDropSuppression()) {
+      if (Config.view(level).enableDropSuppression()) {
         BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos);
       }
 
@@ -172,9 +173,9 @@ public class ExplosionEventHandler {
           for (BlockStatePosWrapper wrapper : toProcess) {
             BlockPos pos = wrapper.getPos();
             BlockState state = wrapper.getState();
-            if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) {
+            if (BlastPlasterUtil.isDynamicTrees(state) && Config.view(level).dtSpecialDrops()) {
               BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, true);
-            } else if (Config.playerTNTDropFullBlocks()) {
+            } else if (Config.view(level).playerTNTDropFullBlocks()) {
               pendingRealDrops.add(new BlastPlasterUtil.PendingDrop(Vec3.atCenterOf(pos), new ItemStack(state.getBlock()), true));
             } else {
               state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
@@ -195,7 +196,7 @@ public class ExplosionEventHandler {
           for (BlockStatePosWrapper wrapper : toProcess) {
             BlockPos pos = wrapper.getPos();
             BlockState state = wrapper.getState();
-            if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) {
+            if (BlastPlasterUtil.isDynamicTrees(state) && Config.view(level).dtSpecialDrops()) {
               BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false);
             } else {
               state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
@@ -225,7 +226,7 @@ public class ExplosionEventHandler {
           BlockState state = wrapper.getState();
 
           if (effectiveMode == ExplosionMode.EJECT_DROPS && !(forcePlayerTNTDrops || isCreeper)) {
-            if (BlastPlasterUtil.isDynamicTrees(state) && Config.dtSpecialDrops()) {
+            if (BlastPlasterUtil.isDynamicTrees(state) && Config.view(level).dtSpecialDrops()) {
               BlastPlasterUtil.addDynamicTreesDropsToPending(pendingRealDrops, serverLevel, pos, state, false);
             } else {
               state.spawnAfterBreak(serverLevel, pos, ItemStack.EMPTY, indirectIsPlayer);
@@ -261,7 +262,7 @@ public class ExplosionEventHandler {
         }));
       }
 
-      if (Config.enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.getExplosionFlashLightLevel(), Config.getExplosionFlashDuration()); }
+      if (Config.view(level).enableExplosionFlash()) { placeTemporaryLight(serverLevel, BlockPos.containing(explosionCenter), Config.view(level).getExplosionFlashLightLevel(), Config.view(level).getExplosionFlashDuration()); }
     }
   }
 
@@ -273,7 +274,7 @@ public class ExplosionEventHandler {
       didDt = doDynamicTreesExpansion(toProcess, affectedPos, level);
     }
 
-    if (Config.healFullTrees()) {
+    if (Config.view(level).healFullTrees()) {
       doVanillaTreeExpansion(toProcess, affectedPos, level);
     }
 
@@ -295,7 +296,7 @@ public class ExplosionEventHandler {
     if (queue.isEmpty()) { return; }
 
     Set<BlockPos> extras = new HashSet<>();
-    int cap = Config.getMaxTreeSize();
+    int cap = Config.view(level).getMaxTreeSize();
     while (!queue.isEmpty() && extras.size() < cap) {
       BlockPos pos = queue.poll();
       for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
@@ -401,7 +402,7 @@ public class ExplosionEventHandler {
     Set<BlockPos> surfaceRoots = new HashSet<>();
     Deque<BlockPos> srQueue = new ArrayDeque<>(dtTreePos);
     Set<BlockPos> srVisited = new HashSet<>(dtTreePos);
-    while (!srQueue.isEmpty() && surfaceRoots.size() < Config.getMaxTreeSize()) {
+    while (!srQueue.isEmpty() && surfaceRoots.size() < Config.view(level).getMaxTreeSize()) {
       BlockPos current = srQueue.poll();
       if (current == null) { break; }
       for (BlockPos offset : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
@@ -433,7 +434,7 @@ public class ExplosionEventHandler {
     }
     dtTreePos.addAll(extraDTLeaves);
 
-    if (dtTreePos.size() > Config.getMaxTreeSize()) {
+    if (dtTreePos.size() > Config.view(level).getMaxTreeSize()) {
       BlastPlaster.LOGGER.info("[BlastPlaster] Skipped huge DT tree ({} > max)", dtTreePos.size());
       return false;
     }
@@ -574,7 +575,7 @@ public class ExplosionEventHandler {
         float leafLogRatio = allLogs.isEmpty() ? 0f : (float)extraLeafCount / allLogs.size();
         float confidence = calculateTreeConfidence(allLogs, extraLeaves, level);
 
-        if (allLogs.size() + extraLeaves.size() > Config.getMaxTreeSize() ||
+        if (allLogs.size() + extraLeaves.size() > Config.view(level).getMaxTreeSize() ||
                 extraLeafCount < Math.max(4, (int)(clusterSize * 0.8f)) ||
                 leafLogRatio < 0.4f ||
                 confidence < 0.65f ||
@@ -599,7 +600,7 @@ public class ExplosionEventHandler {
       }
     }
 
-    if (Config.healFullTrees()) {
+    if (Config.view(level).healFullTrees()) {
       addConnectedVines(toHeal, affectedPos, level);
     }
   }
@@ -883,15 +884,16 @@ public class ExplosionEventHandler {
   }
 
   @SubscribeEvent public void onLivingDrops(LivingDropsEvent event) {
+    Level level = event.getEntity().level();
     DamageSource source = event.getSource();
     if (!source.is(DamageTypeTags.IS_EXPLOSION)) { return; }
-    if (Config.preventMobDrops()) { event.setCanceled(true); return; }
+    if (Config.view(level).preventMobDrops()) { event.setCanceled(true); return; }
     for (ItemEntity item : event.getDrops()) { item.getPersistentData().putBoolean("BlastPlasterMobDrop", true); }
   }
 
   private static void spawnExplosionSmoke(ServerLevel level, Vec3 center) {
-    int duration = Config.getExplosionSmokeDuration();
-    int particleCount = Config.getExplosionSmokeParticleCount();
+    int duration = Config.view(level).getExplosionSmokeDuration();
+    int particleCount = Config.view(level).getExplosionSmokeParticleCount();
     int burstInterval = 15;
     final int numBursts = Math.max(1, duration / burstInterval);
     BlastPlaster.debug("Smoke: count {}, duration {}, {} bursts scheduled from tick {}", particleCount, duration, numBursts, level.getServer().getTickCount());
@@ -914,8 +916,8 @@ public class ExplosionEventHandler {
     if (currentTick - lastFlashTick < 2) { return; }
     lastFlashTick = currentTick;
 
-    int flashCount = Config.getExplosionFlashParticleCount();
-    int pulses = Config.getExplosionFlashPulses();
+    int flashCount = Config.view(level).getExplosionFlashParticleCount();
+    int pulses = Config.view(level).getExplosionFlashPulses();
     int baseTick = level.getServer().getTickCount();
 
     for (int i = 0; i < pulses; i++) {

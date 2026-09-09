@@ -30,7 +30,7 @@ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
-import org.jetbrains.annotations.NotNull;
+import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -73,7 +73,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
   public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal) {
     if (toHeal.isEmpty()) { return; }
 
-    int currentDelay = Config.getMinimumTicksBeforeHeal();
+    int currentDelay = Config.view(this.level).getMinimumTicksBeforeHeal();
     List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
 
     List<BlockStatePosWrapper> dtRoots = new ArrayList<>();
@@ -204,7 +204,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
       layers.computeIfAbsent(wrapper.getPos().getY(), ignored -> new ArrayList<>()).add(wrapper);
     }
 
-    int var = Config.getRandomTickVar();
+    int var = Config.view(this.level).getRandomTickVar();
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
@@ -374,7 +374,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     boolean isEmpty = currentState.isAir();
     boolean hasFluid = !fluid.isEmpty();
 
-    if (Config.isOverride() || isEmpty || hasFluid) {
+    if (Config.view(level).isOverride() || isEmpty || hasFluid) {
       level.setBlock(pos, restoreState, 3);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
@@ -383,7 +383,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     }
   }
 
-  @Override @NotNull public CompoundTag save(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {
+  @Override @Nonnull public CompoundTag save(@Nonnull CompoundTag tag, @Nonnull HolderLookup.Provider registries) {
     ListTag tagList = new ListTag();
     for (TickContainer<Collection<BlockStatePosWrapper>> tc : healTask.getQueue()) {
       CompoundTag tcTag = new CompoundTag();
@@ -409,7 +409,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     for (Tag t : tagList) {
       CompoundTag tcTag = (CompoundTag) t;
       cumulative += tcTag.getInt("ticks");
-      if (leadOffset < 0) { leadOffset = Math.max(0, cumulative - Config.getMinimumTicksBeforeHeal()); }
+      if (leadOffset < 0) { leadOffset = Math.max(0, cumulative - Config.view(this.level).getMinimumTicksBeforeHeal()); }
       ListTag bdListTag = tcTag.getList("blockDataList", Tag.TAG_COMPOUND);
       for (Tag bt : bdListTag) {
         CompoundTag bdTag = (CompoundTag) bt;
