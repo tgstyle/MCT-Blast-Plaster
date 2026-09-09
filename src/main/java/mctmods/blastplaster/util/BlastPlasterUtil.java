@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+@SuppressWarnings("unused")
 public class BlastPlasterUtil {
 
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
@@ -41,6 +42,8 @@ public class BlastPlasterUtil {
     public static final float ALEXSCAVES_NUKE_VISUAL_CHANCE = 0.01f;
     public static final int FALLING_BLOCK_SUPPRESS_TICKS = 25;
     public static final String BYPASS_TAG = "BlastPlasterBypass";
+    public static boolean isTreeWood(BlockState state) { return Config.isLog(state); }
+
     public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
     public static final boolean EO_LOADED = ModList.get().isLoaded("explosionoverhaul");
     public static final boolean AC_LOADED = ModList.get().isLoaded("alexscaves");
@@ -235,7 +238,7 @@ public class BlastPlasterUtil {
     }
 
     public static void spawnEjectDrops(ServerLevel level, BlockPos pos, BlockState state) {
-        if (isDynamicTrees(state) && Config.dtSpecialDrops()) {
+        if (isDynamicTrees(state) && Config.view(level).dtSpecialDrops()) {
             spawnDynamicTreesDrops(level, pos, state);
             return;
         }
@@ -296,12 +299,12 @@ public class BlastPlasterUtil {
 
     public static void finalizeExplodedBlock(ServerLevel level, BlockPos pos, BlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
         if (effectiveMode == Config.ExplosionMode.EJECT_DROPS) {
-            if (!realDropOccurred && Config.enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
-        } else if (Config.enableFakeTossedBlocks() && (effectiveMode == Config.ExplosionMode.HEAL || effectiveMode == Config.ExplosionMode.VISUAL_TOSS) && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (!realDropOccurred && Config.view(level).enableFakeTossedBlocks() && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+        } else if (Config.view(level).enableFakeTossedBlocks() && (effectiveMode == Config.ExplosionMode.HEAL || effectiveMode == Config.ExplosionMode.VISUAL_TOSS) && level.random.nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         clearExplodedBlock(level, pos);
     }
 
-    public static boolean calculateRealDrop(ServerLevel level) { return level.random.nextFloat() < (Config.enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
+    public static boolean calculateRealDrop(ServerLevel level) { return level.random.nextFloat() < (Config.view(level).enableFakeTossedBlocks() ? (1f / 3f) : 0.91F); }
 
     public static void addAttachedCocoaPods(List<BlockStatePosWrapper> toProcess, Set<BlockPos> affectedPos, ServerLevel level) {
         List<BlockStatePosWrapper> extras = new ArrayList<>();

@@ -77,10 +77,10 @@ public class AlexsCavesCompat {
         if (!world.getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING)) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, mobGriefing off"); return; }
         if (NO_GRIEFING_ACCESSOR != null && entity.getEntityData().get(NO_GRIEFING_ACCESSOR)) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, entity NO_GRIEFING flag set"); return; }
 
-        boolean shouldProcess = (Config.healAll() || Config.healNonPlayerTNT()) && Config.isAlexsCavesNukesEnabled();
-        if (!shouldProcess) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, HealAll={} HealNonPlayerTNT={} EnableAlexsCavesNukes={}", Config.healAll(), Config.healNonPlayerTNT(), Config.isAlexsCavesNukesEnabled()); return; }
+        boolean shouldProcess = (Config.view(world).healAll() || Config.view(world).healNonPlayerTNT()) && Config.isAlexsCavesNukesEnabled();
+        if (!shouldProcess) { BlastPlaster.debug("[BlastPlaster] AC nuke: skipped, HealAll={} HealNonPlayerTNT={} EnableAlexsCavesNukes={}", Config.view(world).healAll(), Config.view(world).healNonPlayerTNT(), Config.isAlexsCavesNukesEnabled()); return; }
 
-        ExplosionMode mode = Config.healAll() ? ExplosionMode.HEAL : Config.getExplosionMode();
+        ExplosionMode mode = Config.view(world).healAll() ? ExplosionMode.HEAL : Config.view(world).getExplosionMode();
 
         float size = SIZE_ACCESSOR != null ? entity.getEntityData().get(SIZE_ACCESSOR) : 1.75F;
         int chunksAffected = (int) Math.ceil(size);
@@ -152,7 +152,7 @@ public class AlexsCavesCompat {
             }
         }
 
-        if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, snapshot.keySet(), mode == ExplosionMode.HEAL); }
+        if (Config.view(world).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, snapshot.keySet(), mode == ExplosionMode.HEAL); }
 
         int chunkCount = (2 * chunksAffected + 1) * (2 * chunksAffected + 1) * (2 * chunksAffected + 1);
         int carveDuration = chunkCount / 3 + 60;

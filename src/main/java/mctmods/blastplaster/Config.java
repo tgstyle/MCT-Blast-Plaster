@@ -5,8 +5,12 @@ import com.electronwill.nightconfig.core.io.WritingMode;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
 import net.minecraftforge.common.ForgeConfigSpec.ConfigValue;
@@ -21,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 public class Config {
 
@@ -271,6 +276,89 @@ public class Config {
   public static int getMaxTreeSize() { return MAX_TREE_SIZE.get(); }
   public static boolean enableDropSuppression() { return ENABLE_DROP_SUPPRESSION.get(); }
   public static boolean preventMobDrops() { return PREVENT_MOB_DROPS.get(); }
+
+  public interface View {
+    default ExplosionMode getExplosionMode() { return Config.getExplosionMode(); }
+
+    default boolean enableFakeTossedBlocks() { return Config.enableFakeTossedBlocks(); }
+
+    default boolean enableExplosionFlash() { return Config.enableExplosionFlash(); }
+
+    default int getExplosionFlashDuration() { return Config.getExplosionFlashDuration(); }
+
+    default int getExplosionFlashLightLevel() { return Config.getExplosionFlashLightLevel(); }
+
+    default int getExplosionFlashParticleCount() { return Config.getExplosionFlashParticleCount(); }
+
+    default int getExplosionFlashPulses() { return Config.getExplosionFlashPulses(); }
+
+    default boolean enableExplosionSmoke() { return Config.enableExplosionSmoke(); }
+
+    default int getExplosionSmokeDuration() { return Config.getExplosionSmokeDuration(); }
+
+    default int getExplosionSmokeParticleCount() { return Config.getExplosionSmokeParticleCount(); }
+
+    default boolean playerTNTAlwaysDrops() { return Config.playerTNTAlwaysDrops(); }
+
+    default boolean playerTNTDropFullBlocks() { return Config.playerTNTDropFullBlocks(); }
+
+    default boolean healCreepers() { return Config.healCreepers(); }
+
+    default boolean healNonPlayerTNT() { return Config.healNonPlayerTNT(); }
+
+    default boolean healWither() { return Config.healWither(); }
+
+    default boolean healAll() { return Config.healAll(); }
+
+    default boolean processPlayerIgnitedTNT() { return Config.processPlayerIgnitedTNT(); }
+
+    default List<String> getCustomEntitiesToHeal() { return Config.getCustomEntitiesToHeal(); }
+
+    default int getMinimumTicksBeforeHeal() { return Config.getMinimumTicksBeforeHeal(); }
+
+    default int getRandomTickVar() { return Config.getRandomTickVar(); }
+
+    default boolean isOverride() { return Config.isOverride(); }
+
+    default boolean healFullTrees() { return Config.healFullTrees(); }
+
+    default boolean dtSpecialDrops() { return Config.dtSpecialDrops(); }
+
+    default int getMaxTreeSize() { return Config.getMaxTreeSize(); }
+
+    default boolean enableDropSuppression() { return Config.enableDropSuppression(); }
+
+    default boolean preventMobDrops() { return Config.preventMobDrops(); }
+  }
+
+  private static final View GLOBAL = new View() {};
+  private static Function<Level, View> provider;
+
+  @SuppressWarnings("unused")
+  public static void provider(Function<Level, View> now) { provider = now; }
+
+  public static View view(Level level) {
+    if (provider == null || level == null) { return GLOBAL; }
+
+    View given = provider.apply(level);
+    return given == null ? GLOBAL : given;
+  }
+
+  @SuppressWarnings("unused")
+  public static View view(LevelAccessor access) {
+    if (access instanceof Level level) { return view(level); }
+    if (access instanceof ServerLevelAccessor server) { return view(server.getLevel()); }
+    return GLOBAL;
+  }
+
+  public static TagKey<Block> getLogTag(BlockState state) {
+    for (TagKey<Block> tag : getTreeMap().keySet()) { if (state.is(tag)) { return tag; } }
+    return null;
+  }
+
+  public static Block getLeavesForLog(TagKey<Block> logTag) { return getTreeMap().get(logTag); }
+
+  public static boolean isLog(BlockState state) { return getLogTag(state) != null; }
 
   public static Map<TagKey<Block>, Block> getTreeMap() {
     if (TREE_MAP.isEmpty()) { buildMaps(); }

@@ -175,8 +175,8 @@ public final class RegionSnapshotHealer {
         WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(job.level);
         if (healer == null) { BlastPlaster.LOGGER.warn("[BlastPlaster] Deferred flush: no world healer, {} tree/canopy blocks dropped", job.deferred.size()); return; }
         int flushCount = job.deferred.size();
-        if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(job.level, job.deferredPos, true); }
-        int extra = Math.min(200, Math.max(0, healer.getMaxQueuedDelayTicks() - Config.getMinimumTicksBeforeHeal())) + CANOPY_EXTRA_DELAY;
+        if (Config.view(job.level).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(job.level, job.deferredPos, true); }
+        int extra = Math.min(200, Math.max(0, healer.getMaxQueuedDelayTicks() - Config.view(job.level).getMinimumTicksBeforeHeal())) + CANOPY_EXTRA_DELAY;
         healer.prepareAndScheduleHealing(new ArrayList<>(job.deferred), new HashSet<>(job.deferredPos), job.level, extra);
         BlastPlaster.debug("[BlastPlaster] Deferred flush: {} tree/canopy blocks queued at +{} ticks past solid horizon", flushCount, extra);
         job.deferred.clear();
@@ -210,7 +210,7 @@ public final class RegionSnapshotHealer {
 
         int detectedCount = toHeal.size();
 
-        if (Config.healFullTrees()) {
+        if (Config.view(level).healFullTrees()) {
             for (BlockStatePosWrapper w : toHeal) {
                 if (BlastPlasterUtil.isDtWood(w.getState())) { job.dtWoodSeeds.add(w.getPos()); }
             }
@@ -245,7 +245,7 @@ public final class RegionSnapshotHealer {
             int swept = sweepOrphanedLeaves(level, job, toHeal, affectedPos);
             if (swept > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: orphan sweep tore down {} decaying leaves", swept); }
 
-            if (Config.enableDropSuppression() && !job.orphanSeeds.isEmpty()) { BlastPlasterUtil.recordExplosionArea(level, job.orphanSeeds, suppressFalling); }
+            if (Config.view(level).enableDropSuppression() && !job.orphanSeeds.isEmpty()) { BlastPlasterUtil.recordExplosionArea(level, job.orphanSeeds, suppressFalling); }
         }
 
         if (toHeal.isEmpty()) {
@@ -255,7 +255,7 @@ public final class RegionSnapshotHealer {
         }
         job.quietPasses = 0;
 
-        if (Config.enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(level, affectedPos, suppressFalling); }
+        if (Config.view(level).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(level, affectedPos, suppressFalling); }
 
         if (job.mode != ExplosionMode.HEAL) {
             int visualsAndDrops = 0;
@@ -265,7 +265,7 @@ public final class RegionSnapshotHealer {
                 BlockState state = w.getState();
                 if (state.getBlock() == net.minecraft.world.level.block.Blocks.TNT) { continue; }
                 if (job.mode == ExplosionMode.EJECT_DROPS && BlastPlasterUtil.calculateRealDrop(level)) { BlastPlasterUtil.spawnEjectDrops(level, pos, state); }
-                else if (Config.enableFakeTossedBlocks() && level.random.nextFloat() < job.visualChance) { BlastPlasterUtil.spawnVisualTossedBlock(level, pos, state); }
+                else if (Config.view(level).enableFakeTossedBlocks() && level.random.nextFloat() < job.visualChance) { BlastPlasterUtil.spawnVisualTossedBlock(level, pos, state); }
                 visualsAndDrops++;
             }
             BlastPlaster.debug("[BlastPlaster] Diff pass ({}): {} destroyed blocks processed, {} remaining tracked", job.mode, visualsAndDrops, snapshot.size());

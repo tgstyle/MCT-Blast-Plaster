@@ -95,7 +95,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     addMultiBlockStructures(toHeal, affectedPos, level);
     List<BlockStatePosWrapper> scheduled = new ArrayList<>(toHeal);
 
-    int currentDelay = Config.getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
+    int currentDelay = Config.view(level).getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
     List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
 
     List<BlockStatePosWrapper> dtRoots = new ArrayList<>();
@@ -219,7 +219,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       layers.computeIfAbsent(y, ignored -> new ArrayList<>()).add(wrapper);
     }
     int currentDelay = baseDelay;
-    int var = Config.getRandomTickVar();
+    int var = Config.view(this.level).getRandomTickVar();
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
@@ -368,7 +368,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
           for (BlockPos wood : dtTreePos) {
             if (rootVisited.add(wood)) { rootQueue.add(wood); }
           }
-          int rootCap = Config.getMaxTreeSize();
+          int rootCap = Config.view(level).getMaxTreeSize();
           int rootsFound = 0;
           while (!rootQueue.isEmpty() && rootsFound < rootCap) {
             BlockPos rp = rootQueue.poll();
@@ -413,8 +413,8 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
           }
 
           int totalBlocks = dtTreePos.size() + filteredLeaves.size();
-          if (totalBlocks > Config.getMaxTreeSize()) {
-            BlastPlaster.debug("Skipped huge DT tree expansion ({} blocks > max {})", totalBlocks, Config.getMaxTreeSize());
+          if (totalBlocks > Config.view(level).getMaxTreeSize()) {
+            BlastPlaster.debug("Skipped huge DT tree expansion ({} blocks > max {})", totalBlocks, Config.view(level).getMaxTreeSize());
             continue;
           }
 
@@ -567,8 +567,8 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
           float confidence = calculateTreeConfidence(allLogs, extraLeaves, level);
 
-          if (allLogs.size() + extraLeaves.size() > Config.getMaxTreeSize()) {
-            BlastPlaster.debug("Skipped huge vanilla tree cluster ({} blocks > max {})", allLogs.size() + extraLeaves.size(), Config.getMaxTreeSize());
+          if (allLogs.size() + extraLeaves.size() > Config.view(level).getMaxTreeSize()) {
+            BlastPlaster.debug("Skipped huge vanilla tree cluster ({} blocks > max {})", allLogs.size() + extraLeaves.size(), Config.view(level).getMaxTreeSize());
             continue;
           }
 
@@ -597,7 +597,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
       }
     }
 
-    if (Config.healFullTrees()) { addConnectedVines(toHeal, affectedPos, level); }
+    if (Config.view(level).healFullTrees()) { addConnectedVines(toHeal, affectedPos, level); }
   }
 
   public int collectSeveredDynamicWood(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level, Set<BlockPos> persistentWoodSeeds) {
@@ -618,7 +618,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (queue.isEmpty()) { return 0; }
 
     Set<BlockPos> severedWood = new HashSet<>();
-    int cap = Config.getMaxTreeSize();
+    int cap = Config.view(level).getMaxTreeSize();
 
     while (!queue.isEmpty() && severedWood.size() < cap) {
       BlockPos pos = queue.poll();
@@ -898,7 +898,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     if (queue.isEmpty()) { return; }
 
     Set<BlockPos> extras = new HashSet<>();
-    int cap = Config.getMaxTreeSize();
+    int cap = Config.view(level).getMaxTreeSize();
     while (!queue.isEmpty() && extras.size() < cap) {
       BlockPos pos = queue.poll();
       for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
@@ -1177,7 +1177,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     boolean isEmpty = currentState.isAir();
     boolean hasFluid = !fluid.isEmpty();
 
-    if (Config.isOverride() || isEmpty || hasFluid) {
+    if (Config.view(level).isOverride() || isEmpty || hasFluid) {
       level.setBlock(pos, restoreState, 3);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
