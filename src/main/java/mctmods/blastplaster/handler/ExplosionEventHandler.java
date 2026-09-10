@@ -9,6 +9,11 @@ import mctmods.blastplaster.worldhealer.RegionSnapshotHealer;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.block.Block;
+import java.util.Iterator;
+import org.jetbrains.annotations.Nullable;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.TickTask;
@@ -58,6 +63,10 @@ public class ExplosionEventHandler {
 
   private static final long MAX_SNAPSHOT_VOLUME = 2_097_152L;
   private static long lastFlashTick = 0;
+  private static long lastSweepTick = Long.MIN_VALUE;
+  private static final Map<ResourceKey<Level>, Map<Long, Long>> burningLights = new HashMap<>();
+  private static final int FLASH_APART = 2;
+  private static final int SWEEP_EVERY = 100;
   private static final Map<BlockPos, Long> lastProcessedPositions = new HashMap<>();
   private static final List<PendingEoRegion> pendingEoRegions = new ArrayList<>();
 
@@ -140,7 +149,10 @@ public class ExplosionEventHandler {
     Vec3 explosionCenter = explosion.getPosition();
 
     long currentTick = serverLevel.getGameTime();
-    lastProcessedPositions.entrySet().removeIf(e -> currentTick - e.getValue() > 600L);
+    if (currentTick - lastSweepTick >= SWEEP_EVERY) {
+      lastProcessedPositions.entrySet().removeIf(e -> currentTick - e.getValue() > 600L);
+      lastSweepTick = currentTick;
+    }
 
     if (Config.view(level).enableExplosionFlash()) { spawnImmediateExplosionVisuals(serverLevel, explosionCenter); }
     if (Config.view(level).enableExplosionSmoke()) { spawnExplosionSmoke(serverLevel, explosionCenter); }
@@ -443,26 +455,42 @@ public class ExplosionEventHandler {
   }
 
   private static void placeTemporaryLight(ServerLevel level, BlockPos center, int lightLevel, int duration) {
-    if (lightLevel > 0 && duration >= 1) {
-      BlockState lightState = Blocks.LIGHT.defaultBlockState().setValue(LightBlock.LEVEL, lightLevel);
-      List<BlockPos> lightPositions = new ArrayList<>();
-      for (int dx = -1; dx <= 1; dx++) {
-        for (int dy = -1; dy <= 1; dy++) {
-          for (int dz = -1; dz <= 1; dz++) {
-            if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 2) {
-              BlockPos p = center.offset(dx, dy, dz);
-              if (level.getBlockState(p).isAir()) { lightPositions.add(p); }
-            }
-          }
-        }
-      }
-      for (BlockPos p : lightPositions) { level.setBlock(p, lightState, 3); }
-      int currentTick = level.getServer().getTickCount();
-      level.getServer().tell(new TickTask(currentTick + duration, () -> {
-        for (BlockPos p : lightPositions) {
-          if (level.getBlockState(p).is(Blocks.LIGHT)) { level.setBlock(p, Blocks.AIR.defaultBlockState(), 3); }
-        }
-      }));
+    if (lightLevel <= 0 || duration < 1) { return; }
+    BlockPos spot = airSpot(level, center);
+    if (spot == null) { return; }
+    long now = level.getGameTime();
+    Map<Long, Long> burning = burningLights.computeIfAbsent(level.dimension(), k -> new HashMap<>());
+    if (flashNear(burning, spot, now)) { return; }
+    long key = spot.asLong();
+    burning.put(key, now + duration);
+    level.setBlock(spot, Blocks.LIGHT.defaultBlockState().setValue(LightBlock.LEVEL, lightLevel), Block.UPDATE_CLIENTS);
+    int currentTick = level.getServer().getTickCount();
+    level.getServer().tell(new TickTask(currentTick + duration, () -> {
+      burning.remove(key);
+      if (level.getBlockState(spot).is(Blocks.LIGHT)) { level.setBlock(spot, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS); }
+    }));
+  }
+
+  @Nullable private static BlockPos airSpot(ServerLevel level, BlockPos center) {
+    if (level.getBlockState(center).isAir()) { return center; }
+    for (Direction side : Direction.values()) {
+      BlockPos beside = center.relative(side);
+      if (level.getBlockState(beside).isAir()) { return beside; }
     }
+    return null;
+  }
+
+  private static boolean flashNear(Map<Long, Long> burning, BlockPos spot, long now) {
+    Iterator<Map.Entry<Long, Long>> it = burning.entrySet().iterator();
+    while (it.hasNext()) {
+      Map.Entry<Long, Long> held = it.next();
+      if (held.getValue() <= now) {
+        it.remove();
+        continue;
+      }
+      BlockPos at = BlockPos.of(held.getKey());
+      if (Math.abs(at.getX() - spot.getX()) <= FLASH_APART && Math.abs(at.getY() - spot.getY()) <= FLASH_APART && Math.abs(at.getZ() - spot.getZ()) <= FLASH_APART) { return true; }
+    }
+    return false;
   }
 }
