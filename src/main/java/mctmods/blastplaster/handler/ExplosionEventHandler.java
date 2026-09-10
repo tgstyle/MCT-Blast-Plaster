@@ -21,6 +21,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.projectile.EntityWitherSkull;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.ResourceLocation;
@@ -36,6 +37,7 @@ import net.minecraftforge.event.world.ExplosionEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import com.ferreusveritas.dynamictrees.entities.EntityFallingTree;
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -45,11 +47,16 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.annotation.Nullable;
 
 public class ExplosionEventHandler {
 
     private static final Map<Integer, Long2LongOpenHashMap> lastProcessedPositions = new HashMap<>();
     private static final Map<Integer, Long> lastFlashTick = new HashMap<>();
+    private static final Map<Integer, Long> lastSweepTick = new HashMap<>();
+    private static final Map<Integer, Long2LongOpenHashMap> burningLights = new HashMap<>();
+    private static final int FLASH_APART = 2;
+    private static final int SWEEP_EVERY = 100;
     private static final List<DelayedTask> DELAYED = new ArrayList<>();
     private static final Field exploderField;
 
@@ -87,15 +94,16 @@ public class ExplosionEventHandler {
     public static void runDelayedTasks(WorldServer world) {
         if (DELAYED.isEmpty()) { return; }
         long now = world.getTotalWorldTime();
-        List<DelayedTask> due = new ArrayList<>();
+        List<DelayedTask> due = null;
         Iterator<DelayedTask> it = DELAYED.iterator();
         while (it.hasNext()) {
             DelayedTask task = it.next();
-            if (task.world == world && now >= task.runTick) {
-                due.add(task);
-                it.remove();
-            }
+            if (task.world != world || now < task.runTick) { continue; }
+            if (due == null) { due = new ArrayList<>(); }
+            due.add(task);
+            it.remove();
         }
+        if (due == null) { return; }
         for (DelayedTask task : due) { runTask(task); }
     }
 
@@ -113,6 +121,8 @@ public class ExplosionEventHandler {
         int dimension = world.provider.getDimension();
         lastProcessedPositions.remove(dimension);
         lastFlashTick.remove(dimension);
+        lastSweepTick.remove(dimension);
+        burningLights.remove(dimension);
     }
 
     private static void runTask(DelayedTask task) {
@@ -156,7 +166,11 @@ public class ExplosionEventHandler {
         Vec3d explosionCenter = explosion.getPosition();
         final long currentTick = world.getTotalWorldTime();
         Long2LongOpenHashMap processed = lastProcessedPositions.computeIfAbsent(world.provider.getDimension(), k -> newProcessedMap());
-        processed.long2LongEntrySet().removeIf(e -> currentTick - e.getLongValue() > 600L);
+        Long lastSweep = lastSweepTick.get(world.provider.getDimension());
+        if (lastSweep == null || currentTick - lastSweep >= SWEEP_EVERY) {
+            processed.long2LongEntrySet().removeIf(e -> currentTick - e.getLongValue() > 600L);
+            lastSweepTick.put(world.provider.getDimension(), currentTick);
+        }
 
         if (Config.view(world).enableExplosionFlash()) { spawnImmediateExplosionVisuals(world, explosionCenter); }
         if (Config.view(world).enableExplosionSmoke()) { spawnExplosionSmoke(world, explosionCenter); }
@@ -363,23 +377,40 @@ public class ExplosionEventHandler {
 
     private static void placeTemporaryLight(WorldServer world, BlockPos center, int lightLevel, int duration) {
         if (lightLevel <= 0 || duration < 1) { return; }
-        IBlockState lightState = BlastPlaster.LIGHT.getDefaultState();
-        List<BlockPos> lightPositions = new ArrayList<>();
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 2) {
-                        BlockPos p = center.add(dx, dy, dz);
-                        if (world.isAirBlock(p)) { lightPositions.add(p); }
-                    }
-                }
-            }
-        }
-        for (BlockPos p : lightPositions) { world.setBlockState(p, lightState, 3); }
+        BlockPos spot = airSpot(world, center);
+        if (spot == null) { return; }
+        long now = world.getTotalWorldTime();
+        Long2LongOpenHashMap burning = burningLights.computeIfAbsent(world.provider.getDimension(), k -> new Long2LongOpenHashMap());
+        if (flashNear(burning, spot, now)) { return; }
+        long key = spot.toLong();
+        burning.put(key, now + duration);
+        world.setBlockState(spot, BlastPlaster.LIGHT.getDefaultState(), 2);
         schedule(world, duration, () -> {
-            for (BlockPos p : lightPositions) {
-                if (world.getBlockState(p).getBlock() == BlastPlaster.LIGHT) { world.setBlockToAir(p); }
-            }
+            burning.remove(key);
+            if (world.getBlockState(spot).getBlock() == BlastPlaster.LIGHT) { world.setBlockState(spot, Blocks.AIR.getDefaultState(), 2); }
         });
+    }
+
+    @Nullable private static BlockPos airSpot(WorldServer world, BlockPos center) {
+        if (world.isAirBlock(center)) { return center; }
+        for (EnumFacing side : EnumFacing.values()) {
+            BlockPos beside = center.offset(side);
+            if (world.isAirBlock(beside)) { return beside; }
+        }
+        return null;
+    }
+
+    private static boolean flashNear(Long2LongOpenHashMap burning, BlockPos spot, long now) {
+        Iterator<Long2LongMap.Entry> it = burning.long2LongEntrySet().iterator();
+        while (it.hasNext()) {
+            Long2LongMap.Entry held = it.next();
+            if (held.getLongValue() <= now) {
+                it.remove();
+                continue;
+            }
+            BlockPos at = BlockPos.fromLong(held.getLongKey());
+            if (Math.abs(at.getX() - spot.getX()) <= FLASH_APART && Math.abs(at.getY() - spot.getY()) <= FLASH_APART && Math.abs(at.getZ() - spot.getZ()) <= FLASH_APART) { return true; }
+        }
+        return false;
     }
 }

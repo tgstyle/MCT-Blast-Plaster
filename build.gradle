@@ -74,12 +74,22 @@ repositories {
     mavenCentral()
 }
 
+configurations {
+    clientRuntime {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+}
+
 dependencies {
     implementation rfg.deobf("curse.maven:${common.drtr_version}")
+
+    clientRuntime rfg.deobf("curse.maven:${common.bf3r_version}")
 }
 
 tasks.named('runClient').configure {
     extraArgs.addAll('--width', '1920', '--height', '1080')
+    classpath configurations.clientRuntime
 }
 
 tasks.named('runServer').configure {
