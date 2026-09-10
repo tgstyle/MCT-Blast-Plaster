@@ -1,6 +1,13 @@
 package mctmods.blastplaster.util;
 
 import mctmods.blastplaster.Config;
+
+import com.dtteam.dynamictrees.block.branch.BasicRootsBlock;
+import com.dtteam.dynamictrees.block.branch.SurfaceRootBlock;
+import com.dtteam.dynamictrees.block.branch.TrunkShellBlock;
+import com.dtteam.dynamictrees.block.fruit.FruitBlock;
+import com.dtteam.dynamictrees.block.pod.PodBlock;
+import com.dtteam.dynamictrees.tree.TreeHelper;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 
 import net.minecraft.core.BlockPos;
@@ -37,6 +44,14 @@ public class BlastPlasterUtil {
     public static final float CREEPER_VISUAL_CHANCE = 0.25f;
 
     public static boolean isTreeWood(BlockState state) { return Config.isLog(state); }
+
+    public static boolean isDynamicTreesAssembly(BlockState state) {
+        if (!DT_LOADED) { return false; }
+        Block block = state.getBlock();
+        return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state)
+                || block instanceof TrunkShellBlock || block instanceof SurfaceRootBlock || block instanceof BasicRootsBlock
+                || block instanceof FruitBlock || block instanceof PodBlock;
+    }
 
     public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
 
