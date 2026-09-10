@@ -2,14 +2,26 @@ package mctmods.blastplaster.util;
 
 import mctmods.blastplaster.Config;
 
+import com.ferreusveritas.dynamictrees.api.TreeHelper;
+import com.ferreusveritas.dynamictrees.api.network.MapSignal;
+import com.ferreusveritas.dynamictrees.api.network.NodeInspector;
+import com.ferreusveritas.dynamictrees.block.FruitBlock;
+import com.ferreusveritas.dynamictrees.block.PodBlock;
+import com.ferreusveritas.dynamictrees.block.branch.SurfaceRootBlock;
+import com.ferreusveritas.dynamictrees.block.branch.TrunkShellBlock;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.ServerLevelAccessor;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
+
+import javax.annotation.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -42,6 +54,8 @@ public final class TreeCollector {
 
   public static Tree collect(LevelAccessor level, BlockPos seed, int maxBlocks, Predicate<BlockPos> within) {
     if (!within.test(seed)) { return new Tree(); }
+
+    if (BlastPlasterUtil.DT_LOADED && BlastPlasterUtil.isDynamicTreesAssembly(level.getBlockState(seed))) { return Dynamic.collect(level, seed.immutable(), maxBlocks, within); }
 
     TagKey<Block> logTag = Config.getLogTag(level.getBlockState(seed));
     if (logTag == null) { return new Tree(); }
@@ -275,5 +289,98 @@ public final class TreeCollector {
       }
     }
     return false;
+  }
+
+  private static final class Dynamic {
+    private Dynamic() {}
+
+    static Tree collect(LevelAccessor level, BlockPos seed, int maxBlocks, Predicate<BlockPos> within) {
+      Tree tree = new Tree();
+      Level world = level instanceof Level held ? held : level instanceof ServerLevelAccessor server ? server.getLevel() : null;
+      if (world == null) { return tree; }
+
+      BlockPos root = rootOf(world, seed);
+      if (root == null) { return tree; }
+
+      Set<BlockPos> wood = new HashSet<>();
+      TreeHelper.startAnalysisFromRoot(level, root, new MapSignal(new Collector(wood)));
+      wood.remove(root);
+      if (wood.isEmpty()) { return tree; }
+
+      Set<BlockPos> shells = new HashSet<>();
+      for (BlockPos branch : wood) {
+        for (int dx = -1; dx <= 1; dx++) {
+          for (int dz = -1; dz <= 1; dz++) {
+            if (dx == 0 && dz == 0) { continue; }
+
+            BlockPos adj = branch.offset(dx, 0, dz);
+            if (!wood.contains(adj) && level.getBlockState(adj).getBlock() instanceof TrunkShellBlock) { shells.add(adj); }
+          }
+        }
+      }
+      wood.addAll(shells);
+      Set<BlockPos> seen = new HashSet<>(wood);
+      seen.add(root);
+      Deque<BlockPos> crawl = new ArrayDeque<>(seen);
+      while (!crawl.isEmpty() && wood.size() < maxBlocks) {
+        BlockPos at = crawl.poll();
+        for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
+          BlockPos adj = at.offset(side);
+          if (!seen.add(adj)) { continue; }
+          if (level.getBlockState(adj).getBlock() instanceof SurfaceRootBlock) {
+            wood.add(adj);
+            crawl.add(adj);
+          }
+        }
+      }
+      for (BlockPos part : wood) { if (within.test(part)) { tree.logs.add(part); } }
+      Set<BlockPos> visited = new HashSet<>(seen);
+      for (BlockPos branch : wood) {
+        for (int dx = -LEAF_BRUTE_RADIUS; dx <= LEAF_BRUTE_RADIUS; dx++) {
+          for (int dy = -LEAF_BRUTE_RADIUS; dy <= LEAF_BRUTE_RADIUS; dy++) {
+            for (int dz = -LEAF_BRUTE_RADIUS; dz <= LEAF_BRUTE_RADIUS; dz++) {
+              if (dx == 0 && dy == 0 && dz == 0) { continue; }
+
+              BlockPos adj = branch.offset(dx, dy, dz);
+              if (visited.contains(adj) || !within.test(adj)) { continue; }
+
+              BlockState held = level.getBlockState(adj);
+              if (TreeHelper.isLeaves(held) || held.getBlock() instanceof FruitBlock || held.getBlock() instanceof PodBlock) {
+                visited.add(adj);
+                tree.leaves.add(adj);
+              }
+            }
+          }
+        }
+      }
+      collectVines(level, tree, visited, within);
+      return tree;
+    }
+
+    @Nullable private static BlockPos rootOf(Level world, BlockPos seed) {
+      BlockState held = world.getBlockState(seed);
+      if (TreeHelper.isRooty(held)) { return seed.immutable(); }
+      if (TreeHelper.isBranch(held)) { return rootFromBranch(world, seed); }
+
+      for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
+        BlockPos adj = seed.offset(side);
+        if (TreeHelper.isBranch(world.getBlockState(adj))) { return rootFromBranch(world, adj); }
+      }
+      return null;
+    }
+
+    @Nullable private static BlockPos rootFromBranch(Level world, BlockPos branch) {
+      BlockPos root = TreeHelper.findRootNode(world, branch);
+      return BlockPos.ZERO.equals(root) ? null : root.immutable();
+    }
+
+    private record Collector(Set<BlockPos> nodes) implements NodeInspector {
+      @Override public boolean run(BlockState state, LevelAccessor level, BlockPos pos, Direction fromDir) {
+        nodes.add(pos.immutable());
+        return true;
+      }
+
+      @Override public boolean returnRun(BlockState state, LevelAccessor level, BlockPos pos, Direction fromDir) { return false; }
+    }
   }
 }
