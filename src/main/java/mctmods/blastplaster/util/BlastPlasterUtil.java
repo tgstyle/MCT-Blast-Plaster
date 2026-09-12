@@ -35,13 +35,15 @@ import java.util.Set;
 
 import com.dtteam.dynamictrees.DynamicTrees;
 import com.dtteam.dynamictrees.block.branch.BranchBlock;
-import com.dtteam.dynamictrees.tree.TreeHelper;
 
 @SuppressWarnings("unused")
 public class BlastPlasterUtil {
 
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
     public static final float CREEPER_VISUAL_CHANCE = 0.25f;
+    public static final String BYPASS_TAG = "BlastPlasterControlledDrop";
+
+    public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
 
     public static boolean isTreeWood(BlockState state) { return Config.isLog(state); }
 
@@ -102,12 +104,10 @@ public class BlastPlasterUtil {
         recentExplosions.removeIf(area -> area.expireTick < level.getGameTime());
     }
 
-    @SuppressWarnings("resource")
-    public static boolean shouldSuppressItemDrop(ItemEntity item) {
-        Level rawLevel = item.level();
-        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+    public static boolean shouldSuppressItemDrop(Level level, ItemEntity item) {
+        if (!(level instanceof ServerLevel serverLevel)) { return false; }
 
-        if (item.getPersistentData().getBoolean("BlastPlasterControlledDrop")) { return false; }
+        if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
 
         long now = serverLevel.getGameTime();
         recentExplosions.removeIf(area -> area.expireTick < now);
@@ -216,6 +216,7 @@ public class BlastPlasterUtil {
 
 
     public static void spawnVisualTossedBlock(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.isAir()) { return; }
         ItemStack stack = new ItemStack(state.getBlock());
         ItemEntity visual = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
         visual.setPickUpDelay(32767);

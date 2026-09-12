@@ -62,6 +62,8 @@ public class Config {
   private static final ModConfigSpec.ConfigValue<List<? extends String>> TREE_LOG_LEAF_PAIRS;
   private static final ModConfigSpec.IntValue MAX_TREE_SIZE;
 
+  private static final ModConfigSpec.ConfigValue<List<? extends String>> BLOCK_CONVERSIONS;
+
   private static final ModConfigSpec.BooleanValue ENABLE_DROP_SUPPRESSION;
   private static final ModConfigSpec.BooleanValue PREVENT_MOB_DROPS;
 
@@ -208,6 +210,23 @@ public class Config {
             .defineInRange("MaxTreeSize", 20000, 0, 50000);
     builder.pop();
 
+    builder.comment(
+            "",
+            "================================================================",
+            "  BLOCK CONVERSIONS",
+            "================================================================");
+    builder.push("conversions");
+    BLOCK_CONVERSIONS = builder.comment("Convert blocks caught in an explosion instead of putting them back or dropping them as they were, so a structure degrades a step per blast.",
+                    "Format: <source>=<result>[@chance], one rule per entry. Example: minecraft:stone=minecraft:cobblestone@0.75",
+                    "Source is a block id (minecraft:stone) or a block tag with a leading # (#minecraft:logs). On 1.21.1 the ore dictionary is the c: tag namespace, so #c:ores/iron is an oredict rule.",
+                    "Result is a block id, or 'nothing' to leave the position empty.",
+                    "Chance is 0.0-1.0 and defaults to 1.0. A rule that matches but fails its roll leaves the block alone; later rules are not tried.",
+                    "The first matching rule wins, so put the specific rules above the tags.",
+                    "Properties the result shares with the source are kept, so a converted log keeps its axis.",
+                    "A block that is already the result of some rule is never converted, so a second explosion does not degrade it further.")
+            .defineListAllowEmpty("BlockConversions", List.of(), () -> "minecraft:stone=minecraft:cobblestone@0.75", s -> s instanceof String);
+    builder.pop();
+
     DEBUG_LOGGING = builder.comment("If true, BlastPlaster prints detailed heal scheduling and batch telemetry to the log.")
             .define("EnableDebugLogging", false);
 
@@ -253,6 +272,10 @@ public class Config {
   public static boolean healFullTrees() { return HEAL_FULL_TREES.get(); }
   public static boolean dtSpecialDrops() { return DT_SPECIAL_DROPS.get(); }
   public static int getMaxTreeSize() { return MAX_TREE_SIZE.get(); }
+
+  @SuppressWarnings("unchecked")
+  public static List<String> getBlockConversions() { return (List<String>) BLOCK_CONVERSIONS.get(); }
+
   public static boolean enableDropSuppression() { return ENABLE_DROP_SUPPRESSION.get(); }
   public static boolean preventMobDrops() { return PREVENT_MOB_DROPS.get(); }
 
@@ -304,6 +327,8 @@ public class Config {
     default boolean dtSpecialDrops() { return Config.dtSpecialDrops(); }
 
     default int getMaxTreeSize() { return Config.getMaxTreeSize(); }
+
+    default List<String> getBlockConversions() { return Config.getBlockConversions(); }
 
     default boolean enableDropSuppression() { return Config.enableDropSuppression(); }
 

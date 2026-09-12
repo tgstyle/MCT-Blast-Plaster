@@ -18,6 +18,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
@@ -71,6 +72,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
   }
 
   public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal) {
+    toHeal.removeIf(w -> w.getState().isAir());
     if (toHeal.isEmpty()) { return; }
 
     int currentDelay = Config.view(this.level).getMinimumTicksBeforeHeal();
@@ -325,7 +327,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
 
     Block block = restoreState.getBlock();
     if (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE) {
-      level.setBlock(pos, restoreState, 3);
+      level.setBlock(pos, restoreState, Block.UPDATE_ALL);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
         if (te != null) { te.loadCustomOnly(blockData.getEntityTag(), level.registryAccess()); }
@@ -334,7 +336,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     }
 
     if (BlastPlasterUtil.DT_LOADED && TreeHelper.getTreePart(restoreState) != TreeHelper.NULL_TREE_PART) {
-      level.setBlock(pos, restoreState, 3);
+      level.setBlock(pos, restoreState, Block.UPDATE_ALL);
       level.updateNeighborsAt(pos, restoreState.getBlock());
 
       if (blockData.getEntityTag() != null) {
@@ -375,7 +377,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     boolean hasFluid = !fluid.isEmpty();
 
     if (Config.view(level).isOverride() || isEmpty || hasFluid) {
-      level.setBlock(pos, restoreState, 3);
+      level.setBlock(pos, restoreState, restoreState.getBlock() instanceof FallingBlock ? Block.UPDATE_CLIENTS : Block.UPDATE_ALL);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
         if (te != null) { te.loadCustomOnly(blockData.getEntityTag(), level.registryAccess()); }
