@@ -36,7 +36,7 @@ public final class BlockConversions {
 
   public static void applyAll(ServerLevel level, List<BlockStatePosWrapper> wrappers) {
     if (wrappers.isEmpty()) { return; }
-    RuleSet ruleSet = ruleSet(Config.getBlockConversions());
+    RuleSet ruleSet = ruleSet(Config.view(level).getBlockConversions());
     if (ruleSet.rules().isEmpty()) { return; }
 
     int converted = 0;

@@ -116,7 +116,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     toHeal.removeIf(w -> w.getState().isAir());
     if (toHeal.isEmpty()) { return; }
 
-    int currentDelay = Config.getMinimumTicksBeforeHeal();
+    int currentDelay = Config.view(level).getMinimumTicksBeforeHeal();
     List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
 
     List<BlockStatePosWrapper> dtRoots = new ArrayList<>();
@@ -247,7 +247,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
       layers.computeIfAbsent(wrapper.getPos().getY(), ignored -> new ArrayList<>()).add(wrapper);
     }
 
-    int var = Config.getRandomTickVar();
+    int var = Config.view(level).getRandomTickVar();
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
@@ -408,7 +408,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     boolean isEmpty = currentState.isAir();
     boolean hasFluid = !fluid.isEmpty();
 
-    if (Config.isOverride() || isEmpty || hasFluid) {
+    if (Config.view(level).isOverride() || isEmpty || hasFluid) {
       level.setBlock(pos, restoreState, restoreState.getBlock() instanceof FallingBlock ? Block.UPDATE_CLIENTS : Block.UPDATE_ALL);
     }
   }
@@ -421,7 +421,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     for (Tag t : tagList) {
       if (!(t instanceof CompoundTag tcTag)) { continue; }
       cumulative += tcTag.getIntOr("ticks", 0);
-      if (leadOffset < 0) { leadOffset = Math.max(0, cumulative - Config.getMinimumTicksBeforeHeal()); }
+      if (leadOffset < 0) { leadOffset = Math.max(0, cumulative - Config.view(level).getMinimumTicksBeforeHeal()); }
       ListTag bdListTag = tcTag.getList("blockDataList").orElseGet(ListTag::new);
       for (Tag bt : bdListTag) {
         if (!(bt instanceof CompoundTag bdTag)) { continue; }
