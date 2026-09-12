@@ -6,6 +6,7 @@ import mctmods.blastplaster.Config.ExplosionMode;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.network.NetworkHandler;
 import mctmods.blastplaster.util.BlastPlasterUtil;
+import mctmods.blastplaster.util.BlockConversions;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.block.state.IBlockState;
@@ -214,6 +215,8 @@ public class ExplosionEventHandler {
             if (Config.view(world).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos, effectiveMode == ExplosionMode.HEAL); }
         }
 
+        BlockConversions.applyAll(world, toProcess);
+
         event.getAffectedBlocks().removeAll(affectedPos);
 
         List<BlockStatePosWrapper> toClear = toProcess;
@@ -297,7 +300,7 @@ public class ExplosionEventHandler {
             event.setCanceled(true);
             return;
         }
-        for (EntityItem item : event.getDrops()) { item.getEntityData().setBoolean("BlastPlasterMobDrop", true); }
+        for (EntityItem item : event.getDrops()) { BlastPlasterUtil.markSuppressionBypass(item); }
     }
 
     private Entity getExploder(Explosion explosion) {

@@ -26,6 +26,11 @@ public class BlockStatePosWrapper {
 
     public BlockPos getPos() { return this.pos; }
 
+    public void convertTo(IBlockState converted) {
+        this.state = converted;
+        this.entityTag = null;
+    }
+
     public NBTTagCompound getEntityTag() { return this.entityTag; }
 
     public void readNBT(NBTTagCompound tag) {

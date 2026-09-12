@@ -14,6 +14,7 @@ import net.minecraft.block.BlockDoor;
 import net.minecraft.block.BlockDoublePlant;
 import net.minecraft.block.BlockFence;
 import net.minecraft.block.BlockHugeMushroom;
+import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockOldLog;
 import net.minecraft.block.BlockPlanks;
@@ -92,6 +93,8 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
 
         addMultiBlockStructures(toHeal, affectedPos, world);
         List<BlockStatePosWrapper> scheduled = new ArrayList<>(toHeal);
+        toHeal.removeIf(w -> w.getState().getBlock() == Blocks.AIR);
+        if (toHeal.isEmpty()) { return scheduled; }
 
         int currentDelay = Config.view(world).getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
         List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
@@ -1062,7 +1065,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
     }
 
     private void restore(BlockPos pos, IBlockState state, BlockStatePosWrapper blockData) {
-        world.setBlockState(pos, state, 3);
+        world.setBlockState(pos, state, state.getBlock() instanceof BlockFalling ? 2 : 3);
         if (blockData.getEntityTag() != null) {
             TileEntity te = world.getTileEntity(pos);
             if (te != null) { te.readFromNBT(blockData.getEntityTag()); }

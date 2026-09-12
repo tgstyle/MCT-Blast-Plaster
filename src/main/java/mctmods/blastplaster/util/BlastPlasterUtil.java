@@ -254,6 +254,7 @@ public class BlastPlasterUtil {
     }
 
     public static void spawnVisualTossedBlock(WorldServer world, BlockPos pos, IBlockState state) {
+        if (state.getBlock() == Blocks.AIR) { return; }
         ItemStack stack;
         RayTraceResult target = new RayTraceResult(new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5), EnumFacing.UP, pos);
         try { stack = state.getBlock().getPickBlock(state, target, world, pos, FakePlayerFactory.getMinecraft(world)); }

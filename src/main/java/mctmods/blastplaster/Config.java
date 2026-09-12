@@ -33,6 +33,7 @@ public class Config {
     private static final String CAT_EJECT = "eject_drops";
     private static final String CAT_MOB_DROPS = "mob_drops";
     private static final String CAT_TREES = "trees";
+    private static final String CAT_CONVERSIONS = "conversions";
     private static final Map<String, String> TREE_MAP = new HashMap<>();
     private static final Map<IBlockState, String> LOG_KEY_CACHE = new IdentityHashMap<>();
     private static final Map<IBlockState, String> LEAF_KEY_CACHE = new IdentityHashMap<>();
@@ -41,6 +42,7 @@ public class Config {
     private static final Set<String> LEAF_KEYS = new HashSet<>();
     private static final List<String> CUSTOM_ENTITIES = new ArrayList<>();
     private static String[] treeLogLeafPairs = new String[0];
+    private static String[] blockConversions = new String[0];
     private static ExplosionMode explosionMode = ExplosionMode.HEAL;
     private static boolean enableFakeTossedBlocks;
     private static boolean enableExplosionFlash;
@@ -119,6 +121,8 @@ public class Config {
         default boolean dtSpecialDrops() { return Config.dtSpecialDrops(); }
 
         default int getMaxTreeSize() { return Config.getMaxTreeSize(); }
+
+        default List<String> getBlockConversions() { return Config.getBlockConversions(); }
 
         default boolean enableDropSuppression() { return Config.enableDropSuppression(); }
 
@@ -218,6 +222,22 @@ public class Config {
             maxTreeSize = config.get(CAT_TREES, "MaxTreeSize", 20000,
                     "Max blocks allowed in a tree for full healing (prevents lag). Large old-growth jungle trees often exceed 7500 blocks; set higher if you see warnings.", 0, 50000).getInt();
 
+            config.setCategoryComment(CAT_CONVERSIONS, "Block conversions");
+            blockConversions = config.get(CAT_CONVERSIONS, "BlockConversions", new String[0],
+                    "Convert blocks caught in an explosion instead of putting them back or dropping them as they were,\n"
+                            + "so a structure degrades a step per blast.\n"
+                            + "Format: <source>=<result>[@chance], one rule per entry. Example: minecraft:stone=minecraft:cobblestone@0.75\n"
+                            + "Source is a block id (minecraft:stone), a block id with a meta (minecraft:log:1),\n"
+                            + "or an ore dictionary name with a leading # (#logWood).\n"
+                            + "A source with no meta matches every meta of that block.\n"
+                            + "Result is a block id, a block id with a meta, or 'nothing' to leave the position empty.\n"
+                            + "A result with no meta keeps the properties it shares with the source, so a converted log keeps its axis;\n"
+                            + "a result with a meta uses that meta exactly and copies nothing.\n"
+                            + "Chance is 0.0-1.0 and defaults to 1.0. A rule that matches but fails its roll leaves the block alone;\n"
+                            + "later rules are not tried. The first matching rule wins, so put the specific rules above the ore names.\n"
+                            + "A block that is already the result of some rule is never converted, so a second explosion does not\n"
+                            + "degrade it further.").getStringList();
+
             debugLogging = config.get(Configuration.CATEGORY_GENERAL, "EnableDebugLogging", false,
                     "If true, BlastPlaster prints detailed heal scheduling and batch telemetry to the log.").getBoolean();
 
@@ -293,6 +313,8 @@ public class Config {
     public static boolean dtSpecialDrops() { return dtSpecialDrops; }
 
     public static int getMaxTreeSize() { return maxTreeSize; }
+
+    public static List<String> getBlockConversions() { return Arrays.asList(blockConversions); }
 
     public static boolean enableDropSuppression() { return enableDropSuppression; }
 
