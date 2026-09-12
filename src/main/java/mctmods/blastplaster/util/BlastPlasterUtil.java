@@ -34,6 +34,9 @@ public class BlastPlasterUtil {
 
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
     public static final float CREEPER_VISUAL_CHANCE = 0.25f;
+    public static final String BYPASS_TAG = "BlastPlasterControlledDrop";
+
+    public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
 
     public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
 
@@ -89,7 +92,7 @@ public class BlastPlasterUtil {
         Level rawLevel = item.level();
         if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
 
-        if (item.getPersistentData().getBoolean("BlastPlasterControlledDrop").orElse(false)) { return false; }
+        if (item.getPersistentData().getBoolean(BYPASS_TAG).orElse(false)) { return false; }
 
         long now = serverLevel.getGameTime();
         recentExplosions.removeIf(area -> area.expireTick < now);
@@ -198,6 +201,7 @@ public class BlastPlasterUtil {
 
 
     public static void spawnVisualTossedBlock(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.isAir()) { return; }
         ItemStack stack = new ItemStack(state.getBlock());
         ItemEntity visual = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
         visual.setPickUpDelay(32767);
