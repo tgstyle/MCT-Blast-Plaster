@@ -98,11 +98,9 @@ public class BlastPlasterUtil {
         recentExplosions.removeIf(area -> area.expireTick < now);
     }
 
-    @SuppressWarnings("resource")
-    public static boolean shouldSuppressItemDrop(ItemEntity item) {
+    public static boolean shouldSuppressItemDrop(Level level, ItemEntity item) {
         if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
-        Level rawLevel = item.level();
-        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+        if (!(level instanceof ServerLevel serverLevel)) { return false; }
 
         long now = serverLevel.getGameTime();
         recentExplosions.removeIf(area -> area.expireTick < now);
@@ -128,10 +126,8 @@ public class BlastPlasterUtil {
         return false;
     }
 
-    @SuppressWarnings("resource")
-    public static boolean shouldSuppressFallingBlock(FallingBlockEntity falling) {
-        Level rawLevel = falling.level();
-        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+    public static boolean shouldSuppressFallingBlock(Level level, FallingBlockEntity falling) {
+        if (!(level instanceof ServerLevel serverLevel)) { return false; }
         return shouldSuppressLaunchAt(serverLevel, falling.position());
     }
 
@@ -256,6 +252,7 @@ public class BlastPlasterUtil {
     }
 
     public static void spawnVisualTossedBlock(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.isAir()) { return; }
         ItemStack stack = new ItemStack(state.getBlock());
         ItemEntity visual = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
         visual.setPickUpDelay(32767);

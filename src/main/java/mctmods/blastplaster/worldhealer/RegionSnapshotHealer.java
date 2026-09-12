@@ -5,6 +5,7 @@ import mctmods.blastplaster.Config;
 import mctmods.blastplaster.Config.ExplosionMode;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.util.BlastPlasterUtil;
+import mctmods.blastplaster.util.BlockConversions;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -201,6 +202,8 @@ public final class RegionSnapshotHealer {
             affectedPos.add(pos);
             it.remove();
         }
+
+        BlockConversions.applyAll(level, toHeal);
 
         WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(level);
         if (healer == null) {

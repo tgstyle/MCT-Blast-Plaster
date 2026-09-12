@@ -30,6 +30,11 @@ public class BlockStatePosWrapper {
         return this.pos;
     }
 
+    public void convertTo(BlockState converted) {
+        this.state = converted;
+        this.entityTag = null;
+    }
+
     public CompoundTag getEntityTag() {
         return this.entityTag;
     }

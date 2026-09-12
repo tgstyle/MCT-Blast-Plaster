@@ -28,6 +28,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
@@ -94,6 +95,8 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
     addMultiBlockStructures(toHeal, affectedPos, level);
     List<BlockStatePosWrapper> scheduled = new ArrayList<>(toHeal);
+    toHeal.removeIf(w -> w.getState().isAir());
+    if (toHeal.isEmpty()) { return scheduled; }
 
     int currentDelay = Config.view(level).getMinimumTicksBeforeHeal() + Math.max(0, extraDelay);
     List<BlockStatePosWrapper> dtPriority = BlastPlasterUtil.DT_LOADED ? extractDtPriorityBlocks(toHeal) : new ArrayList<>();
@@ -1145,7 +1148,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
 
     Block block = restoreState.getBlock();
     if (block == Blocks.BAMBOO || block == Blocks.SUGAR_CANE) {
-      level.setBlock(pos, restoreState, 3);
+      level.setBlock(pos, restoreState, Block.UPDATE_ALL);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
         if (te != null) { te.load(blockData.getEntityTag()); }
@@ -1154,7 +1157,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     }
 
     if (BlastPlasterUtil.DT_LOADED && isDynamicTreePart(restoreState)) {
-      level.setBlock(pos, restoreState, 3);
+      level.setBlock(pos, restoreState, Block.UPDATE_ALL);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
         if (te != null) { te.load(blockData.getEntityTag()); }
@@ -1178,7 +1181,7 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
     boolean hasFluid = !fluid.isEmpty();
 
     if (Config.view(level).isOverride() || isEmpty || hasFluid) {
-      level.setBlock(pos, restoreState, 3);
+      level.setBlock(pos, restoreState, restoreState.getBlock() instanceof FallingBlock ? Block.UPDATE_CLIENTS : Block.UPDATE_ALL);
       if (blockData.getEntityTag() != null) {
         BlockEntity te = level.getBlockEntity(pos);
         if (te != null) { te.load(blockData.getEntityTag()); }
