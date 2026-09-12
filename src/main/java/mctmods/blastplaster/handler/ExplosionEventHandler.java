@@ -5,6 +5,7 @@ import mctmods.blastplaster.Config;
 import mctmods.blastplaster.Config.ExplosionMode;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.util.BlastPlasterUtil;
+import mctmods.blastplaster.util.BlockConversions;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.core.BlockPos;
@@ -38,6 +39,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TntBlock;
 import net.minecraft.world.level.block.HugeMushroomBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.LightBlock;
@@ -47,10 +49,12 @@ import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
 
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 
 import com.dtteam.dynamictrees.api.network.MapSignal;
@@ -80,6 +84,9 @@ public class ExplosionEventHandler {
   private static final Map<ResourceKey<Level>, Map<Long, Long>> burningLights = new HashMap<>();
   private static final int FLASH_APART = 2;
   private static final int SWEEP_EVERY = 100;
+  private static final int PUNCH_WINDOW = 5;
+  private static final String PLAYER_LIT_TAG = "BlastPlasterPlayerLit";
+  private static final Map<ResourceKey<Level>, Map<Long, Long>> recentTntPunches = new HashMap<>();
   private static final Map<BlockPos, Long> lastProcessedPositions = new HashMap<>();
 
   @SubscribeEvent public void onDetonate(ExplosionEvent.Detonate event) {
@@ -92,7 +99,7 @@ public class ExplosionEventHandler {
     boolean isPlayerIgnitedTNT = false;
     if (exploder instanceof PrimedTnt primed) {
       LivingEntity owner = primed.getOwner();
-      isPlayerIgnitedTNT = (owner instanceof Player) || (indirect instanceof Player);
+      isPlayerIgnitedTNT = (owner instanceof Player) || (indirect instanceof Player) || primed.getPersistentData().getBoolean(PLAYER_LIT_TAG).orElse(false);
     }
 
     boolean isCreeper = exploder instanceof Creeper;
@@ -163,6 +170,8 @@ public class ExplosionEventHandler {
         BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, serverLevel);
         BlastPlasterUtil.addBambooVerticals(toProcess, affectedPos, serverLevel);
       }
+
+      BlockConversions.applyAll(serverLevel, toProcess);
 
       if (Config.enableDropSuppression()) {
         BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos);
@@ -262,7 +271,7 @@ public class ExplosionEventHandler {
         serverLevel.getServer().execute(() -> {
           for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
             ItemEntity item = new ItemEntity(serverLevel, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
-            item.getPersistentData().putBoolean("BlastPlasterControlledDrop", true);
+            BlastPlasterUtil.markSuppressionBypass(item);
             if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, serverLevel); } else { BlastPlasterUtil.applyTossVelocity(item, serverLevel); }
             serverLevel.addFreshEntity(item);
           }
@@ -894,7 +903,34 @@ public class ExplosionEventHandler {
     DamageSource source = event.getSource();
     if (!source.is(DamageTypeTags.IS_EXPLOSION)) { return; }
     if (Config.preventMobDrops()) { event.setCanceled(true); return; }
-    for (ItemEntity item : event.getDrops()) { item.getPersistentData().putBoolean("BlastPlasterMobDrop", true); }
+    for (ItemEntity item : event.getDrops()) { BlastPlasterUtil.markSuppressionBypass(item); }
+  }
+
+  @SubscribeEvent public void onPrimedTntJoin(EntityJoinLevelEvent event) {
+    Level level = event.getLevel();
+    if (level.isClientSide()) { return; }
+    if (!(event.getEntity() instanceof PrimedTnt primed) || primed.getOwner() != null) { return; }
+    markIfPunched(level, primed);
+  }
+
+  @SubscribeEvent(priority = EventPriority.HIGHEST)
+  public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+    Level level = event.getLevel();
+    if (level.isClientSide()) { return; }
+    if (!(level.getBlockState(event.getPos()).getBlock() instanceof TntBlock)) { return; }
+
+    long now = level.getGameTime();
+    Map<Long, Long> punches = recentTntPunches.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
+    punches.values().removeIf(at -> now - at > PUNCH_WINDOW);
+    punches.put(event.getPos().asLong(), now);
+  }
+
+  private static void markIfPunched(Level level, PrimedTnt primed) {
+    Map<Long, Long> punches = recentTntPunches.get(level.dimension());
+    if (punches == null || punches.isEmpty()) { return; }
+    Long at = punches.get(primed.blockPosition().asLong());
+    if (at == null || level.getGameTime() - at > PUNCH_WINDOW) { return; }
+    primed.getPersistentData().putBoolean(PLAYER_LIT_TAG, true);
   }
 
   private static void spawnExplosionSmoke(ServerLevel level, Vec3 center) {
@@ -948,7 +984,7 @@ public class ExplosionEventHandler {
     BlockPos spot = airSpot(level, center);
     if (spot == null) { return; }
     long now = level.getGameTime();
-    Map<Long, Long> burning = burningLights.computeIfAbsent(level.dimension(), k -> new HashMap<>());
+    Map<Long, Long> burning = burningLights.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
     if (flashNear(burning, spot, now)) { return; }
     long key = spot.asLong();
     burning.put(key, now + duration);

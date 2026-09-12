@@ -34,6 +34,11 @@ public class BlockStatePosWrapper {
         return this.pos;
     }
 
+    public void convertTo(BlockState converted) {
+        this.state = converted;
+        this.entityTag = null;
+    }
+
     public void readNBT(CompoundTag tag, Level level) {
         HolderGetter<Block> blocks = (level != null)
                 ? level.holderLookup(Registries.BLOCK)
