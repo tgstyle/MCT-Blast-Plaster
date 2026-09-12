@@ -27,9 +27,15 @@ import java.util.List;
 import java.util.Set;
 
 import com.dtteam.dynamictrees.DynamicTrees;
+import com.dtteam.dynamictrees.block.branch.BasicRootsBlock;
 import com.dtteam.dynamictrees.block.branch.BranchBlock;
+import com.dtteam.dynamictrees.block.branch.SurfaceRootBlock;
+import com.dtteam.dynamictrees.block.branch.TrunkShellBlock;
+import com.dtteam.dynamictrees.block.fruit.FruitBlock;
+import com.dtteam.dynamictrees.block.pod.PodBlock;
 import com.dtteam.dynamictrees.tree.TreeHelper;
 
+@SuppressWarnings("unused")
 public class BlastPlasterUtil {
 
     public static final float DEFAULT_VISUAL_CHANCE = 1.00f;
@@ -37,6 +43,16 @@ public class BlastPlasterUtil {
     public static final String BYPASS_TAG = "BlastPlasterControlledDrop";
 
     public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
+
+    public static boolean isTreeWood(BlockState state) { return Config.isLog(state); }
+
+    public static boolean isDynamicTreesAssembly(BlockState state) {
+        if (!DT_LOADED) { return false; }
+        Block block = state.getBlock();
+        return TreeHelper.isBranch(state) || TreeHelper.isLeaves(state) || TreeHelper.isRooty(state)
+                || block instanceof TrunkShellBlock || block instanceof SurfaceRootBlock || block instanceof BasicRootsBlock
+                || block instanceof FruitBlock || block instanceof PodBlock;
+    }
 
     public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
 
@@ -87,10 +103,8 @@ public class BlastPlasterUtil {
         recentExplosions.removeIf(area -> area.expireTick < level.getGameTime());
     }
 
-    @SuppressWarnings("resource")
-    public static boolean shouldSuppressItemDrop(ItemEntity item) {
-        Level rawLevel = item.level();
-        if (!(rawLevel instanceof ServerLevel serverLevel)) { return false; }
+    public static boolean shouldSuppressItemDrop(Level level, ItemEntity item) {
+        if (!(level instanceof ServerLevel serverLevel)) { return false; }
 
         if (item.getPersistentData().getBoolean(BYPASS_TAG).orElse(false)) { return false; }
 
@@ -244,11 +258,11 @@ public class BlastPlasterUtil {
 
     public static void finalizeExplodedBlock(ServerLevel level, BlockPos pos, BlockState state, Config.ExplosionMode effectiveMode, boolean realDropOccurred, float visualSpawnChance) {
         if (effectiveMode == Config.ExplosionMode.VISUAL_TOSS) {
-            if (Config.enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (Config.view(level).enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         } else if (effectiveMode == Config.ExplosionMode.HEAL) {
-            if (Config.enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (Config.view(level).enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         } else if (effectiveMode == Config.ExplosionMode.EJECT_DROPS) {
-            if (!realDropOccurred && Config.enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
+            if (!realDropOccurred && Config.view(level).enableFakeTossedBlocks() && level.getRandom().nextFloat() < visualSpawnChance) { spawnVisualTossedBlock(level, pos, state); }
         }
         clearExplodedBlock(level, pos);
     }
