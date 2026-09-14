@@ -53,6 +53,7 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
+import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 
 import com.dtteam.dynamictrees.api.network.MapSignal;
@@ -173,9 +174,7 @@ public class ExplosionEventHandler {
 
       BlockConversions.applyAll(serverLevel, toProcess);
 
-      if (Config.view(level).enableDropSuppression()) {
-        BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos);
-      }
+      if (Config.view(level).enableDropSuppression()) { BlastPlasterUtil.recordBlastPositions(serverLevel, toProcess); }
 
       explosion.getToBlow().removeAll(affectedPos);
 
@@ -235,6 +234,7 @@ public class ExplosionEventHandler {
       }
 
       BlastPlasterUtil.setDtDestroyIgnored(true);
+      BlastPlasterUtil.setDropSuppression(Config.view(level).enableDropSuppression());
       try {
         for (BlockStatePosWrapper wrapper : fullToProcessForDestroy) {
           BlockPos pos = wrapper.getPos();
@@ -267,14 +267,16 @@ public class ExplosionEventHandler {
           BlastPlasterUtil.finalizeExplodedBlock(serverLevel, pos, state, effectiveMode, realDropOccurred, visualChance);
         }
       }
-      finally { BlastPlasterUtil.setDtDestroyIgnored(false); }
+      finally {
+        BlastPlasterUtil.setDtDestroyIgnored(false);
+        BlastPlasterUtil.setDropSuppression(false);
+      }
 
       if (!pendingRealDrops.isEmpty()) {
         int nextTick = serverLevel.getServer().getTickCount() + 2;
         serverLevel.getServer().tell(new TickTask(nextTick, () -> {
           for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
             ItemEntity item = new ItemEntity(serverLevel, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
-            BlastPlasterUtil.markSuppressionBypass(item);
             if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, serverLevel); } else { BlastPlasterUtil.applyTossVelocity(item, serverLevel); }
             serverLevel.addFreshEntity(item);
           }
@@ -897,17 +899,19 @@ public class ExplosionEventHandler {
   @SubscribeEvent public void onItemEntityJoin(EntityJoinLevelEvent event) {
     if (event.getLevel().isClientSide) { return; }
     if (!(event.getEntity() instanceof ItemEntity item)) { return; }
-    if (BlastPlasterUtil.shouldSuppressItemDrop(event.getLevel(), item)) {
-      event.setCanceled(true);
-    }
+    if (BlastPlasterUtil.shouldSuppressItemDrop(item)) { event.setCanceled(true); }
+  }
+
+  @SubscribeEvent public void onBlockDrops(BlockDropsEvent event) {
+    if (event.getBreaker() != null) { return; }
+    if (BlastPlasterUtil.knockedLooseByBlast(event.getLevel(), event.getPos())) { event.setCanceled(true); }
   }
 
   @SubscribeEvent public void onLivingDrops(LivingDropsEvent event) {
     Level level = event.getEntity().level();
     DamageSource source = event.getSource();
     if (!source.is(DamageTypeTags.IS_EXPLOSION)) { return; }
-    if (Config.view(level).preventMobDrops()) { event.setCanceled(true); return; }
-    for (ItemEntity item : event.getDrops()) { BlastPlasterUtil.markSuppressionBypass(item); }
+    if (Config.view(level).preventMobDrops()) { event.setCanceled(true); }
   }
 
   @SubscribeEvent public void onPrimedTntJoin(EntityJoinLevelEvent event) {

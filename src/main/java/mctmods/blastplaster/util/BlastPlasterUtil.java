@@ -13,6 +13,7 @@ import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -24,13 +25,14 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.level.block.state.properties.Property;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import net.neoforged.fml.ModList;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.dtteam.dynamictrees.DynamicTrees;
@@ -58,10 +60,9 @@ public class BlastPlasterUtil {
     public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
 
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
-
-    private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
-
-    private record ExplosionArea(AABB box, long expireTick) {}
+    private static final int KNOCK_ON_WINDOW = 20;
+    private static boolean suppressingDrops;
+    private static final Map<ResourceKey<Level>, Map<Long, Long>> blastPositions = new HashMap<>();
 
     static {
         for (int x = -1; x <= 1; x++) {
@@ -78,48 +79,26 @@ public class BlastPlasterUtil {
         return DEFAULT_VISUAL_CHANCE;
     }
 
-    public static void recordExplosionArea(ServerLevel level, Set<BlockPos> positions) {
-        if (positions.isEmpty()) { return; }
+    public static void setDropSuppression(boolean suppress) { suppressingDrops = suppress; }
 
-        double minX = Double.MAX_VALUE;
-        double minY = Double.MAX_VALUE;
-        double minZ = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double maxY = -Double.MAX_VALUE;
-        double maxZ = -Double.MAX_VALUE;
-
-        for (BlockPos pos : positions) {
-            minX = Math.min(minX, pos.getX());
-            minY = Math.min(minY, pos.getY());
-            minZ = Math.min(minZ, pos.getZ());
-            maxX = Math.max(maxX, pos.getX());
-            maxY = Math.max(maxY, pos.getY());
-            maxZ = Math.max(maxZ, pos.getZ());
-        }
-
-        AABB box = new AABB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
-        long expire = level.getGameTime() + 200L;
-
-        recentExplosions.add(new ExplosionArea(box, expire));
-        recentExplosions.removeIf(area -> area.expireTick < level.getGameTime());
+    public static void recordBlastPositions(ServerLevel level, List<BlockStatePosWrapper> removed) {
+        long now = level.getGameTime();
+        Map<Long, Long> tracked = blastPositions.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
+        tracked.values().removeIf(expire -> expire < now);
+        for (BlockStatePosWrapper wrapper : removed) { tracked.put(wrapper.getPos().asLong(), now + KNOCK_ON_WINDOW); }
     }
 
-    public static boolean shouldSuppressItemDrop(Level level, ItemEntity item) {
-        if (!(level instanceof ServerLevel serverLevel)) { return false; }
-
-        if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
-
-        long now = serverLevel.getGameTime();
-        recentExplosions.removeIf(area -> area.expireTick < now);
-
-        Vec3 pos = item.position();
-        for (ExplosionArea area : recentExplosions) {
-            if (area.box.contains(pos)) {
-                return true;
-            }
-        }
-        return false;
+    public static boolean knockedLooseByBlast(ServerLevel level, BlockPos pos) {
+        Map<Long, Long> tracked = blastPositions.get(level.dimension());
+        if (tracked == null || tracked.isEmpty()) { return false; }
+        long now = level.getGameTime();
+        tracked.values().removeIf(expire -> expire < now);
+        boolean touching = tracked.containsKey(pos.asLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.offset(offset).asLong()));
+        if (touching) { tracked.put(pos.asLong(), now + KNOCK_ON_WINDOW); }
+        return touching;
     }
+
+    public static boolean shouldSuppressItemDrop(ItemEntity item) { return suppressingDrops && !item.getPersistentData().getBoolean(BYPASS_TAG); }
 
     public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType) {
         int h = 1;
@@ -221,6 +200,7 @@ public class BlastPlasterUtil {
         ItemEntity visual = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
         visual.setPickUpDelay(32767);
         visual.lifespan = 60;
+        markSuppressionBypass(visual);
         applyTossVelocity(visual, level);
         level.addFreshEntity(visual);
     }
