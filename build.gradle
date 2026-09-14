@@ -55,7 +55,7 @@ minecraft {
     mcVersion = '1.12.2'
     mcpMappingChannel = 'stable'
     mcpMappingVersion = common.mcp_mappings.toString().split('-')[0]
-    username = 'tgstyle'
+    username = 'TGstyle'
     extraRunJvmArguments.addAll(
             '-Dforge.logging.console.level=debug'
     )

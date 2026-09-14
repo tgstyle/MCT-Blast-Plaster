@@ -34,6 +34,7 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityJoinWorldEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.event.world.ExplosionEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -209,11 +210,12 @@ public class ExplosionEventHandler {
             }
         }
 
+        boolean suppressDrops = effectiveMode != ExplosionMode.EJECT_DROPS && Config.view(world).enableDropSuppression();
         if (effectiveMode != ExplosionMode.EJECT_DROPS) {
             BlastPlasterUtil.addAttachedCocoaPods(toProcess, affectedPos, world);
             BlastPlasterUtil.addReedVerticals(toProcess, affectedPos, world);
-            if (Config.view(world).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, affectedPos, effectiveMode == ExplosionMode.HEAL); }
         }
+        if (suppressDrops && effectiveMode == ExplosionMode.HEAL) { BlastPlasterUtil.recordLaunchArea(world, affectedPos); }
 
         BlockConversions.applyAll(world, toProcess);
 
@@ -221,6 +223,7 @@ public class ExplosionEventHandler {
 
         List<BlockStatePosWrapper> toClear = toProcess;
         if (worldHealer != null) { toClear = worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, world); }
+        if (suppressDrops) { BlastPlasterUtil.recordBlastPositions(world, toClear); }
 
         List<BlastPlasterUtil.PendingDrop> pendingRealDrops = new ArrayList<>();
 
@@ -237,6 +240,7 @@ public class ExplosionEventHandler {
 
         int cleared = 0;
         BlastPlasterUtil.setDtDestroyIgnored(true);
+        BlastPlasterUtil.setDropSuppression(suppressDrops);
         try {
             for (BlockStatePosWrapper wrapper : toClear) {
                 BlockPos pos = wrapper.getPos();
@@ -256,13 +260,15 @@ public class ExplosionEventHandler {
                 BlastPlasterUtil.finalizeExplodedBlock(world, pos, state, effectiveMode, false, BlastPlasterUtil.getVisualSpawnChance(isCreeper));
             }
         }
-        finally { BlastPlasterUtil.setDtDestroyIgnored(false); }
+        finally {
+            BlastPlasterUtil.setDtDestroyIgnored(false);
+            BlastPlasterUtil.setDropSuppression(false);
+        }
 
         if (!pendingRealDrops.isEmpty()) {
             schedule(world, 2, () -> {
                 for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
                     EntityItem item = new EntityItem(world, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
-                    BlastPlasterUtil.markSuppressionBypass(item);
                     if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, world); }
                     else { BlastPlasterUtil.applyTossVelocity(item, world); }
                     world.spawnEntity(item);
@@ -296,11 +302,12 @@ public class ExplosionEventHandler {
 
     @SubscribeEvent public void onLivingDrops(LivingDropsEvent event) {
         if (!event.getSource().isExplosion()) { return; }
-        if (Config.view(event.getEntity().world).preventMobDrops()) {
-            event.setCanceled(true);
-            return;
-        }
-        for (EntityItem item : event.getDrops()) { BlastPlasterUtil.markSuppressionBypass(item); }
+        if (Config.view(event.getEntity().world).preventMobDrops()) { event.setCanceled(true); }
+    }
+
+    @SubscribeEvent public void onHarvestDrops(BlockEvent.HarvestDropsEvent event) {
+        if (event.getHarvester() != null || !(event.getWorld() instanceof WorldServer)) { return; }
+        if (BlastPlasterUtil.knockedLooseByBlast((WorldServer) event.getWorld(), event.getPos())) { event.getDrops().clear(); }
     }
 
     private Entity getExploder(Explosion explosion) {

@@ -31,9 +31,12 @@ import com.ferreusveritas.dynamictrees.blocks.BlockSurfaceRoot;
 import com.ferreusveritas.dynamictrees.blocks.BlockTrunkShell;
 import com.ferreusveritas.dynamictrees.trees.TreeFamily;
 import net.minecraftforge.common.util.FakePlayerFactory;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class BlastPlasterUtil {
@@ -45,6 +48,9 @@ public class BlastPlasterUtil {
     public static final boolean DT_LOADED = BlastPlaster.dynamictrees;
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
     private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
+    private static final Map<Integer, Long2LongOpenHashMap> blastPositions = new HashMap<>();
+    private static final int KNOCK_ON_WINDOW = 20;
+    private static boolean suppressingDrops;
 
     static {
         for (int x = -1; x <= 1; x++) {
@@ -61,13 +67,11 @@ public class BlastPlasterUtil {
         private final int dimension;
         private final AxisAlignedBB box;
         private final long expireTick;
-        private final long fallingExpireTick;
 
-        private ExplosionArea(int dimension, AxisAlignedBB box, long expireTick, long fallingExpireTick) {
+        private ExplosionArea(int dimension, AxisAlignedBB box, long expireTick) {
             this.dimension = dimension;
             this.box = box;
             this.expireTick = expireTick;
-            this.fallingExpireTick = fallingExpireTick;
         }
     }
 
@@ -94,7 +98,7 @@ public class BlastPlasterUtil {
 
     public static void markSuppressionBypass(EntityItem item) { item.getEntityData().setBoolean(BYPASS_TAG, true); }
 
-    public static void recordExplosionArea(WorldServer world, Set<BlockPos> positions, boolean suppressFallingBlocks) {
+    public static void recordLaunchArea(WorldServer world, Set<BlockPos> positions) {
         if (positions.isEmpty()) { return; }
 
         double minX = Double.MAX_VALUE;
@@ -116,7 +120,7 @@ public class BlastPlasterUtil {
         AxisAlignedBB box = new AxisAlignedBB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
         long now = world.getTotalWorldTime();
 
-        recentExplosions.add(new ExplosionArea(world.provider.getDimension(), box, now + 200L, suppressFallingBlocks ? now + FALLING_BLOCK_SUPPRESS_TICKS : 0L));
+        recentExplosions.add(new ExplosionArea(world.provider.getDimension(), box, now + FALLING_BLOCK_SUPPRESS_TICKS));
         expire(now);
     }
 
@@ -126,21 +130,29 @@ public class BlastPlasterUtil {
         }
     }
 
-    public static boolean shouldSuppressItemDrop(EntityItem item) {
-        if (item.getEntityData().getBoolean(BYPASS_TAG)) { return false; }
-        if (!(item.world instanceof WorldServer)) { return false; }
-        return shouldSuppressAt((WorldServer) item.world, item.getPositionVector());
+    public static void setDropSuppression(boolean suppress) { suppressingDrops = suppress; }
+
+    public static boolean shouldSuppressItemDrop(EntityItem item) { return suppressingDrops && !item.getEntityData().getBoolean(BYPASS_TAG); }
+
+    public static void recordBlastPositions(WorldServer world, List<BlockStatePosWrapper> removed) {
+        long now = world.getTotalWorldTime();
+        Long2LongOpenHashMap tracked = trackedBlastPositions(world, now);
+        for (BlockStatePosWrapper wrapper : removed) { tracked.put(wrapper.getPos().toLong(), now + KNOCK_ON_WINDOW); }
     }
 
-    private static boolean shouldSuppressAt(WorldServer world, Vec3d pos) {
+    public static boolean knockedLooseByBlast(WorldServer world, BlockPos pos) {
         long now = world.getTotalWorldTime();
-        int dimension = world.provider.getDimension();
-        expire(now);
+        Long2LongOpenHashMap tracked = trackedBlastPositions(world, now);
+        if (tracked.isEmpty()) { return false; }
+        boolean touching = tracked.containsKey(pos.toLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.add(offset).toLong()));
+        if (touching) { tracked.put(pos.toLong(), now + KNOCK_ON_WINDOW); }
+        return touching;
+    }
 
-        for (ExplosionArea area : recentExplosions) {
-            if (area.dimension == dimension && area.box.contains(pos)) { return true; }
-        }
-        return false;
+    private static Long2LongOpenHashMap trackedBlastPositions(WorldServer world, long now) {
+        Long2LongOpenHashMap tracked = blastPositions.computeIfAbsent(world.provider.getDimension(), k -> new Long2LongOpenHashMap());
+        tracked.long2LongEntrySet().removeIf(e -> e.getLongValue() < now);
+        return tracked;
     }
 
     public static boolean shouldSuppressLaunchAt(WorldServer world, Vec3d pos) {
@@ -149,7 +161,7 @@ public class BlastPlasterUtil {
         expire(now);
 
         for (ExplosionArea area : recentExplosions) {
-            if (area.dimension == dimension && area.fallingExpireTick >= now && area.box.contains(pos)) { return true; }
+            if (area.dimension == dimension && area.box.contains(pos)) { return true; }
         }
         return false;
     }
