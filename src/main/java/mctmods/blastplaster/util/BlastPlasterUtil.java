@@ -53,14 +53,11 @@ public class BlastPlasterUtil {
     public static final boolean AC_LOADED = ModList.get().isLoaded("alexscaves");
 
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
-
     private static final int KNOCK_ON_WINDOW = 20;
-
     private static boolean suppressingDrops;
-
     private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
-
     private static final Map<ResourceKey<Level>, Map<Long, Long>> blastPositions = new HashMap<>();
+    private static final Map<ResourceKey<Level>, Map<Long, Long>> playerBreaks = new HashMap<>();
 
     private record ExplosionArea(AABB box, long expireTick) {}
 
@@ -110,7 +107,23 @@ public class BlastPlasterUtil {
 
     public static void setDropSuppression(boolean suppress) { suppressingDrops = suppress; }
 
-    public static boolean shouldSuppressItemDrop(ItemEntity item) { return suppressingDrops && !item.getPersistentData().getBoolean(BYPASS_TAG); }
+    public static boolean shouldSuppressItemDrop(ServerLevel level, ItemEntity item) {
+        if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
+        if (suppressingDrops) { return true; }
+        return Config.view(level).enableDropSuppression() && !brokenByPlayer(level, item.blockPosition()) && RegionSnapshotHealer.removingSnapshotBlock(level, item.blockPosition());
+    }
+
+    public static void recordPlayerBreak(ServerLevel level, BlockPos pos) {
+        long now = level.getGameTime();
+        Map<Long, Long> breaks = playerBreaks.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
+        breaks.values().removeIf(at -> at < now);
+        breaks.put(pos.asLong(), now);
+    }
+
+    private static boolean brokenByPlayer(ServerLevel level, BlockPos pos) {
+        Map<Long, Long> breaks = playerBreaks.get(level.dimension());
+        return breaks != null && breaks.getOrDefault(pos.asLong(), Long.MIN_VALUE) == level.getGameTime();
+    }
 
     public static void recordBlastPositions(ServerLevel level, List<BlockStatePosWrapper> removed) {
         long now = level.getGameTime();
@@ -123,7 +136,7 @@ public class BlastPlasterUtil {
         long now = level.getGameTime();
         Map<Long, Long> tracked = blastPositions.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
         tracked.values().removeIf(expire -> expire < now);
-        boolean touching = tracked.containsKey(pos.asLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.offset(offset).asLong())) || RegionSnapshotHealer.touchesChangedSnapshot(level, pos);
+        boolean touching = tracked.containsKey(pos.asLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.offset(offset).asLong())) || RegionSnapshotHealer.touchesSnapshotCrater(level, pos);
         if (touching) { tracked.put(pos.asLong(), now + KNOCK_ON_WINDOW); }
         return touching;
     }

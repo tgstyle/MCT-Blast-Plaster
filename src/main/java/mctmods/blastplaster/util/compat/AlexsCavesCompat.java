@@ -157,7 +157,7 @@ public class AlexsCavesCompat {
         int chunkCount = (2 * chunksAffected + 1) * (2 * chunksAffected + 1) * (2 * chunksAffected + 1);
         int carveDuration = chunkCount / 3 + 60;
         int passes = Math.max(12, carveDuration / 20 + 3);
-        RegionSnapshotHealer.scheduleDiffHeal(world, snapshot, 20, 20, passes, mode, BlastPlasterUtil.ALEXSCAVES_NUKE_VISUAL_CHANCE);
+        RegionSnapshotHealer.scheduleDiffHeal(world, snapshot, 20, 20, passes, mode, BlastPlasterUtil.ALEXSCAVES_NUKE_VISUAL_CHANCE, true);
         BlastPlaster.debug("[BlastPlaster] AC nuke: snapshot {} blocks (+{} tree column) at {} (mode {}), {} diff passes scheduled", snapshot.size(), extended, center, mode, passes);
     }
 }

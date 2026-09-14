@@ -16,6 +16,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.VineBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ public final class RegionSnapshotHealer {
         final Map<BlockPos, BlockStatePosWrapper> snapshot;
         final ExplosionMode mode;
         final float visualChance;
+        final boolean carveShaped;
         final Set<BlockPos> orphanSeeds = new HashSet<>();
         final Set<BlockPos> dtWoodSeeds = new HashSet<>();
         final Set<BlockPos> deferredPos = new HashSet<>();
@@ -50,20 +52,21 @@ public final class RegionSnapshotHealer {
         int remainingPasses;
         int quietPasses;
 
-        Job(ServerLevel level, Map<BlockPos, BlockStatePosWrapper> snapshot, ExplosionMode mode, float visualChance, long nextRunGameTime, int interval, int remainingPasses) {
+        Job(ServerLevel level, Map<BlockPos, BlockStatePosWrapper> snapshot, ExplosionMode mode, float visualChance, boolean carveShaped, long nextRunGameTime, int interval, int remainingPasses) {
             this.level = level;
             this.snapshot = snapshot;
             this.mode = mode;
             this.visualChance = visualChance;
+            this.carveShaped = carveShaped;
             this.nextRunGameTime = nextRunGameTime;
             this.interval = interval;
             this.remainingPasses = remainingPasses;
         }
     }
 
-    public static void scheduleDiffHeal(ServerLevel level, Map<BlockPos, BlockStatePosWrapper> snapshot, int firstDelay, int passInterval, int passes, ExplosionMode mode, float visualChance) {
+    public static void scheduleDiffHeal(ServerLevel level, Map<BlockPos, BlockStatePosWrapper> snapshot, int firstDelay, int passInterval, int passes, ExplosionMode mode, float visualChance, boolean carveShaped) {
         if (snapshot.isEmpty() || passes < 1) { return; }
-        JOBS.add(new Job(level, snapshot, mode, visualChance, level.getGameTime() + Math.max(1, firstDelay), Math.max(1, passInterval), passes));
+        JOBS.add(new Job(level, snapshot, mode, visualChance, carveShaped, level.getGameTime() + Math.max(1, firstDelay), Math.max(1, passInterval), passes));
         WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(level);
         if (healer != null) { healer.markDirty(); }
     }
@@ -99,6 +102,7 @@ public final class RegionSnapshotHealer {
             CompoundTag jobTag = new CompoundTag();
             jobTag.putString("mode", job.mode.name());
             jobTag.putFloat("visualChance", job.visualChance);
+            jobTag.putBoolean("carveShaped", job.carveShaped);
             jobTag.putInt("interval", job.interval);
             jobTag.putInt("remainingPasses", job.remainingPasses);
             jobTag.putInt("quietPasses", job.quietPasses);
@@ -147,7 +151,7 @@ public final class RegionSnapshotHealer {
                 snapshot.put(w.getPos(), w);
             }
 
-            Job job = new Job(level, snapshot, mode, jobTag.getFloat("visualChance"), now + Math.max(1L, jobTag.getLong("delay")), Math.max(1, jobTag.getInt("interval")), Math.max(1, jobTag.getInt("remainingPasses")));
+            Job job = new Job(level, snapshot, mode, jobTag.getFloat("visualChance"), jobTag.getBoolean("carveShaped"), now + Math.max(1L, jobTag.getLong("delay")), Math.max(1, jobTag.getInt("interval")), Math.max(1, jobTag.getInt("remainingPasses")));
             job.quietPasses = jobTag.getInt("quietPasses");
             for (long l : jobTag.getLongArray("orphanSeeds")) { job.orphanSeeds.add(BlockPos.of(l)); }
             for (long l : jobTag.getLongArray("dtWoodSeeds")) { job.dtWoodSeeds.add(BlockPos.of(l)); }
@@ -300,13 +304,23 @@ public final class RegionSnapshotHealer {
         BlastPlaster.debug("[BlastPlaster] Diff pass: {} solid blocks queued, {} tree/canopy blocks deferred ({} total held), {} remaining tracked", toHeal.size(), canopy.size(), job.deferred.size(), snapshot.size());
     }
 
-    public static boolean touchesChangedSnapshot(ServerLevel level, BlockPos pos) {
+    public static boolean touchesSnapshotCrater(ServerLevel level, BlockPos pos) {
         for (Job job : JOBS) {
             if (job.level != level) { continue; }
-            if (changedSinceSnapshot(job, pos)) { return true; }
+            if (job.carveShaped && job.snapshot.containsKey(pos)) { return true; }
             for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
                 if (changedSinceSnapshot(job, pos.offset(side))) { return true; }
             }
+        }
+        return false;
+    }
+
+    public static boolean removingSnapshotBlock(ServerLevel level, BlockPos pos) {
+        if (JOBS.isEmpty()) { return false; }
+        BlockEntity removing = level.getBlockEntity(pos);
+        if (removing == null || removing.getBlockState().is(level.getBlockState(pos).getBlock())) { return false; }
+        for (Job job : JOBS) {
+            if (job.level == level && job.snapshot.containsKey(pos)) { return true; }
         }
         return false;
     }

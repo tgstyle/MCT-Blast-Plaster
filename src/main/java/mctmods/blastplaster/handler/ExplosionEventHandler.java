@@ -48,6 +48,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.level.ExplosionEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -317,7 +318,7 @@ public class ExplosionEventHandler {
       if (eoSnapshot.isEmpty()) { return; }
       if (Config.view(level).enableDropSuppression() && effectiveMode == ExplosionMode.HEAL) { BlastPlasterUtil.recordLaunchArea(serverLevel, eoSnapshot.keySet()); }
       int passes = Math.min(60, 9 + eoSnapshot.size() / 1500);
-      RegionSnapshotHealer.scheduleDiffHeal(serverLevel, eoSnapshot, 5, 20, passes, effectiveMode, BlastPlasterUtil.getVisualSpawnChance(isCreeper, false));
+      RegionSnapshotHealer.scheduleDiffHeal(serverLevel, eoSnapshot, 5, 20, passes, effectiveMode, BlastPlasterUtil.getVisualSpawnChance(isCreeper, false), false);
       BlastPlaster.debug("[BlastPlaster] EO crater watch: {} blocks tracked (mode {}), {} passes", eoSnapshot.size(), effectiveMode, passes);
     }
   }
@@ -393,7 +394,7 @@ public class ExplosionEventHandler {
     if (event.getLevel().isClientSide) { return; }
 
     if (event.getEntity() instanceof ItemEntity item) {
-      if (BlastPlasterUtil.shouldSuppressItemDrop(item)) { event.setCanceled(true); }
+      if (event.getLevel() instanceof ServerLevel serverLevel && BlastPlasterUtil.shouldSuppressItemDrop(serverLevel, item)) { event.setCanceled(true); }
       return;
     }
 
@@ -414,6 +415,10 @@ public class ExplosionEventHandler {
         event.setCanceled(true);
       }
     }
+  }
+
+  @SubscribeEvent public void onPlayerBreak(BlockEvent.BreakEvent event) {
+    if (event.getLevel() instanceof ServerLevel serverLevel) { BlastPlasterUtil.recordPlayerBreak(serverLevel, event.getPos()); }
   }
 
   @SubscribeEvent public void onLivingDrops(LivingDropsEvent event) {
