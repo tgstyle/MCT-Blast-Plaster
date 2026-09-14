@@ -152,7 +152,7 @@ public class AlexsCavesCompat {
             }
         }
 
-        if (Config.view(world).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(world, snapshot.keySet(), mode == ExplosionMode.HEAL); }
+        if (Config.view(world).enableDropSuppression() && mode == ExplosionMode.HEAL) { BlastPlasterUtil.recordLaunchArea(world, snapshot.keySet()); }
 
         int chunkCount = (2 * chunksAffected + 1) * (2 * chunksAffected + 1) * (2 * chunksAffected + 1);
         int carveDuration = chunkCount / 3 + 60;

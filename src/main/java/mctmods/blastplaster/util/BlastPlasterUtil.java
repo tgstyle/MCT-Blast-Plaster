@@ -2,9 +2,11 @@ package mctmods.blastplaster.util;
 
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
+import mctmods.blastplaster.worldhealer.RegionSnapshotHealer;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -31,7 +33,9 @@ import com.ferreusveritas.dynamictrees.block.branch.BranchBlock;
 import com.ferreusveritas.dynamictrees.block.branch.SurfaceRootBlock;
 import com.ferreusveritas.dynamictrees.block.branch.TrunkShellBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @SuppressWarnings("unused")
@@ -50,9 +54,15 @@ public class BlastPlasterUtil {
 
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
 
+    private static final int KNOCK_ON_WINDOW = 20;
+
+    private static boolean suppressingDrops;
+
     private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
 
-    private record ExplosionArea(AABB box, long expireTick, long fallingExpireTick) {}
+    private static final Map<ResourceKey<Level>, Map<Long, Long>> blastPositions = new HashMap<>();
+
+    private record ExplosionArea(AABB box, long expireTick) {}
 
     static {
         for (int x = -1; x <= 1; x++) {
@@ -72,7 +82,7 @@ public class BlastPlasterUtil {
 
     public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
 
-    public static void recordExplosionArea(ServerLevel level, Set<BlockPos> positions, boolean suppressFallingBlocks) {
+    public static void recordLaunchArea(ServerLevel level, Set<BlockPos> positions) {
         if (positions.isEmpty()) { return; }
 
         double minX = Double.MAX_VALUE;
@@ -94,24 +104,28 @@ public class BlastPlasterUtil {
         AABB box = new AABB(minX - 15.0, minY - 15.0, minZ - 15.0, maxX + 16.0, maxY + 16.0, maxZ + 16.0);
         long now = level.getGameTime();
 
-        recentExplosions.add(new ExplosionArea(box, now + 200L, suppressFallingBlocks ? now + FALLING_BLOCK_SUPPRESS_TICKS : 0L));
+        recentExplosions.add(new ExplosionArea(box, now + FALLING_BLOCK_SUPPRESS_TICKS));
         recentExplosions.removeIf(area -> area.expireTick < now);
     }
 
-    public static boolean shouldSuppressItemDrop(Level level, ItemEntity item) {
-        if (item.getPersistentData().getBoolean(BYPASS_TAG)) { return false; }
-        if (!(level instanceof ServerLevel serverLevel)) { return false; }
+    public static void setDropSuppression(boolean suppress) { suppressingDrops = suppress; }
 
-        long now = serverLevel.getGameTime();
-        recentExplosions.removeIf(area -> area.expireTick < now);
+    public static boolean shouldSuppressItemDrop(ItemEntity item) { return suppressingDrops && !item.getPersistentData().getBoolean(BYPASS_TAG); }
 
-        Vec3 pos = item.position();
-        for (ExplosionArea area : recentExplosions) {
-            if (area.box.contains(pos)) {
-                return true;
-            }
-        }
-        return false;
+    public static void recordBlastPositions(ServerLevel level, List<BlockStatePosWrapper> removed) {
+        long now = level.getGameTime();
+        Map<Long, Long> tracked = blastPositions.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
+        tracked.values().removeIf(expire -> expire < now);
+        for (BlockStatePosWrapper wrapper : removed) { tracked.put(wrapper.getPos().asLong(), now + KNOCK_ON_WINDOW); }
+    }
+
+    public static boolean knockedLooseByBlast(ServerLevel level, BlockPos pos) {
+        long now = level.getGameTime();
+        Map<Long, Long> tracked = blastPositions.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
+        tracked.values().removeIf(expire -> expire < now);
+        boolean touching = tracked.containsKey(pos.asLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.offset(offset).asLong())) || RegionSnapshotHealer.touchesChangedSnapshot(level, pos);
+        if (touching) { tracked.put(pos.asLong(), now + KNOCK_ON_WINDOW); }
+        return touching;
     }
 
     public static boolean shouldSuppressLaunchAt(ServerLevel level, Vec3 pos) {
@@ -119,7 +133,7 @@ public class BlastPlasterUtil {
         recentExplosions.removeIf(area -> area.expireTick < now);
 
         for (ExplosionArea area : recentExplosions) {
-            if (area.fallingExpireTick >= now && area.box.contains(pos)) {
+            if (area.box.contains(pos)) {
                 return true;
             }
         }

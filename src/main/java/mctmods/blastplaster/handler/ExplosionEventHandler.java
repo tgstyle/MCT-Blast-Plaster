@@ -197,12 +197,14 @@ public class ExplosionEventHandler {
 
       BlockConversions.applyAll(serverLevel, toProcess);
 
-      if (effectiveMode != ExplosionMode.EJECT_DROPS && Config.view(level).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, affectedPos, effectiveMode == ExplosionMode.HEAL); }
+      boolean suppressDrops = effectiveMode != ExplosionMode.EJECT_DROPS && Config.view(level).enableDropSuppression();
+      if (suppressDrops && effectiveMode == ExplosionMode.HEAL) { BlastPlasterUtil.recordLaunchArea(serverLevel, affectedPos); }
 
       explosion.getToBlow().removeAll(affectedPos);
 
       List<BlockStatePosWrapper> toClear = toProcess;
       if (worldHealer != null && eoSnapshot == null) { toClear = worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, serverLevel); }
+      if (suppressDrops) { BlastPlasterUtil.recordBlastPositions(serverLevel, toClear); }
 
       List<BlastPlasterUtil.PendingDrop> pendingRealDrops = new ArrayList<>();
 
@@ -253,6 +255,7 @@ public class ExplosionEventHandler {
       }
 
       BlastPlasterUtil.setDtDestroyIgnored(true);
+      BlastPlasterUtil.setDropSuppression(suppressDrops);
       try {
         for (BlockStatePosWrapper wrapper : toClear) {
           BlockPos pos = wrapper.getPos();
@@ -284,14 +287,16 @@ public class ExplosionEventHandler {
           BlastPlasterUtil.finalizeExplodedBlock(serverLevel, pos, state, effectiveMode, false, visualChance);
         }
       }
-      finally { BlastPlasterUtil.setDtDestroyIgnored(false); }
+      finally {
+        BlastPlasterUtil.setDtDestroyIgnored(false);
+        BlastPlasterUtil.setDropSuppression(false);
+      }
 
       if (!pendingRealDrops.isEmpty()) {
         int nextTick = serverLevel.getServer().getTickCount() + 2;
         serverLevel.getServer().tell(new TickTask(nextTick, () -> {
           for (BlastPlasterUtil.PendingDrop p : pendingRealDrops) {
             ItemEntity item = new ItemEntity(serverLevel, p.pos().x, p.pos().y + 0.5, p.pos().z, p.stack());
-            BlastPlasterUtil.markSuppressionBypass(item);
             if (p.isGentle()) { BlastPlasterUtil.applyGentleTossVelocity(item, serverLevel); }
             else { BlastPlasterUtil.applyTossVelocity(item, serverLevel); }
             serverLevel.addFreshEntity(item);
@@ -310,7 +315,7 @@ public class ExplosionEventHandler {
         eoSnapshot.keySet().removeAll(affectedPos);
       }
       if (eoSnapshot.isEmpty()) { return; }
-      if (Config.view(level).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(serverLevel, eoSnapshot.keySet(), effectiveMode == ExplosionMode.HEAL); }
+      if (Config.view(level).enableDropSuppression() && effectiveMode == ExplosionMode.HEAL) { BlastPlasterUtil.recordLaunchArea(serverLevel, eoSnapshot.keySet()); }
       int passes = Math.min(60, 9 + eoSnapshot.size() / 1500);
       RegionSnapshotHealer.scheduleDiffHeal(serverLevel, eoSnapshot, 5, 20, passes, effectiveMode, BlastPlasterUtil.getVisualSpawnChance(isCreeper, false));
       BlastPlaster.debug("[BlastPlaster] EO crater watch: {} blocks tracked (mode {}), {} passes", eoSnapshot.size(), effectiveMode, passes);
@@ -388,9 +393,7 @@ public class ExplosionEventHandler {
     if (event.getLevel().isClientSide) { return; }
 
     if (event.getEntity() instanceof ItemEntity item) {
-      if (BlastPlasterUtil.shouldSuppressItemDrop(event.getLevel(), item)) {
-        event.setCanceled(true);
-      }
+      if (BlastPlasterUtil.shouldSuppressItemDrop(item)) { event.setCanceled(true); }
       return;
     }
 
@@ -417,8 +420,7 @@ public class ExplosionEventHandler {
     Level level = event.getEntity().level();
     DamageSource source = event.getSource();
     if (!source.is(DamageTypeTags.IS_EXPLOSION)) { return; }
-    if (Config.view(level).preventMobDrops()) { event.setCanceled(true); return; }
-    for (ItemEntity item : event.getDrops()) { BlastPlasterUtil.markSuppressionBypass(item); }
+    if (Config.view(level).preventMobDrops()) { event.setCanceled(true); }
   }
 
   @SubscribeEvent(priority = EventPriority.HIGHEST)

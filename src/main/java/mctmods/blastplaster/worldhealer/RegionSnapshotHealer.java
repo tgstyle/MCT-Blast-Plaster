@@ -176,7 +176,7 @@ public final class RegionSnapshotHealer {
         WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(job.level);
         if (healer == null) { BlastPlaster.LOGGER.warn("[BlastPlaster] Deferred flush: no world healer, {} tree/canopy blocks dropped", job.deferred.size()); return; }
         int flushCount = job.deferred.size();
-        if (Config.view(job.level).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(job.level, job.deferredPos, true); }
+        if (Config.view(job.level).enableDropSuppression()) { BlastPlasterUtil.recordLaunchArea(job.level, job.deferredPos); }
         int extra = Math.min(200, Math.max(0, healer.getMaxQueuedDelayTicks() - Config.view(job.level).getMinimumTicksBeforeHeal())) + CANOPY_EXTRA_DELAY;
         healer.prepareAndScheduleHealing(new ArrayList<>(job.deferred), new HashSet<>(job.deferredPos), job.level, extra);
         BlastPlaster.debug("[BlastPlaster] Deferred flush: {} tree/canopy blocks queued at +{} ticks past solid horizon", flushCount, extra);
@@ -187,6 +187,7 @@ public final class RegionSnapshotHealer {
     private static void runDiffPass(Job job) {
         ServerLevel level = job.level;
         boolean suppressFalling = job.mode == ExplosionMode.HEAL;
+        boolean suppressDrops = Config.view(level).enableDropSuppression();
         Map<BlockPos, BlockStatePosWrapper> snapshot = job.snapshot;
         List<BlockStatePosWrapper> toHeal = new ArrayList<>();
         Set<BlockPos> affectedPos = new HashSet<>();
@@ -219,36 +220,40 @@ public final class RegionSnapshotHealer {
             }
 
             int before = toHeal.size();
-            healer.addExtraTreeBlocks(toHeal, affectedPos, level);
-            if (BlastPlasterUtil.DT_LOADED) {
-                int crawled = healer.collectSeveredDynamicWood(toHeal, affectedPos, level, job.dtWoodSeeds);
-                if (crawled > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: cross-pass crawl claimed {} severed DT blocks", crawled); }
-            }
-            if (toHeal.size() > before) {
-                int tornDown = 0;
-                for (int i = before; i < toHeal.size(); i++) {
-                    BlockStatePosWrapper extra = toHeal.get(i);
-                    BlockPos pos = extra.getPos();
-                    if (!level.isLoaded(pos)) { continue; }
-                    if (level.getBlockState(pos) != extra.getState()) { continue; }
-                    snapshot.remove(pos);
-                    if (job.mode == ExplosionMode.EJECT_DROPS && BlastPlasterUtil.calculateRealDrop(level)) {
-                        BlastPlasterUtil.spawnEjectDrops(level, pos, extra.getState());
-                        BlastPlasterUtil.finalizeExplodedBlock(level, pos, extra.getState(), job.mode, true, job.visualChance);
-                    } else { BlastPlasterUtil.finalizeExplodedBlock(level, pos, extra.getState(), job.mode, false, job.visualChance); }
-                    tornDown++;
+            BlastPlasterUtil.setDropSuppression(suppressDrops);
+            try {
+                healer.addExtraTreeBlocks(toHeal, affectedPos, level);
+                if (BlastPlasterUtil.DT_LOADED) {
+                    int crawled = healer.collectSeveredDynamicWood(toHeal, affectedPos, level, job.dtWoodSeeds);
+                    if (crawled > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: cross-pass crawl claimed {} severed DT blocks", crawled); }
                 }
-                if (tornDown > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: tree expansion tore down {} extra blocks", tornDown); }
+                if (toHeal.size() > before) {
+                    int tornDown = 0;
+                    for (int i = before; i < toHeal.size(); i++) {
+                        BlockStatePosWrapper extra = toHeal.get(i);
+                        BlockPos pos = extra.getPos();
+                        if (!level.isLoaded(pos)) { continue; }
+                        if (level.getBlockState(pos) != extra.getState()) { continue; }
+                        snapshot.remove(pos);
+                        if (job.mode == ExplosionMode.EJECT_DROPS && BlastPlasterUtil.calculateRealDrop(level)) {
+                            BlastPlasterUtil.spawnEjectDrops(level, pos, extra.getState());
+                            BlastPlasterUtil.finalizeExplodedBlock(level, pos, extra.getState(), job.mode, true, job.visualChance);
+                        } else { BlastPlasterUtil.finalizeExplodedBlock(level, pos, extra.getState(), job.mode, false, job.visualChance); }
+                        tornDown++;
+                    }
+                    if (tornDown > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: tree expansion tore down {} extra blocks", tornDown); }
+                }
+
+                for (BlockStatePosWrapper w : toHeal) {
+                    if (w.getState().is(BlockTags.LOGS)) { job.orphanSeeds.add(w.getPos()); }
+                }
+
+                int swept = sweepOrphanedLeaves(level, job, toHeal, affectedPos);
+                if (swept > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: orphan sweep tore down {} decaying leaves", swept); }
             }
+            finally { BlastPlasterUtil.setDropSuppression(false); }
 
-            for (BlockStatePosWrapper w : toHeal) {
-                if (w.getState().is(BlockTags.LOGS)) { job.orphanSeeds.add(w.getPos()); }
-            }
-
-            int swept = sweepOrphanedLeaves(level, job, toHeal, affectedPos);
-            if (swept > 0) { BlastPlaster.debug("[BlastPlaster] Diff pass: orphan sweep tore down {} decaying leaves", swept); }
-
-            if (Config.view(level).enableDropSuppression() && !job.orphanSeeds.isEmpty()) { BlastPlasterUtil.recordExplosionArea(level, job.orphanSeeds, suppressFalling); }
+            if (suppressDrops && suppressFalling && !job.orphanSeeds.isEmpty()) { BlastPlasterUtil.recordLaunchArea(level, job.orphanSeeds); }
         }
 
         if (toHeal.isEmpty()) {
@@ -258,7 +263,10 @@ public final class RegionSnapshotHealer {
         }
         job.quietPasses = 0;
 
-        if (Config.view(level).enableDropSuppression()) { BlastPlasterUtil.recordExplosionArea(level, affectedPos, suppressFalling); }
+        if (suppressDrops) {
+            BlastPlasterUtil.recordBlastPositions(level, toHeal);
+            if (suppressFalling) { BlastPlasterUtil.recordLaunchArea(level, affectedPos); }
+        }
 
         if (job.mode != ExplosionMode.HEAL) {
             int visualsAndDrops = 0;
@@ -290,6 +298,22 @@ public final class RegionSnapshotHealer {
         if (!toHeal.isEmpty()) { healer.prepareAndScheduleHealing(toHeal, affectedPos, level); }
 
         BlastPlaster.debug("[BlastPlaster] Diff pass: {} solid blocks queued, {} tree/canopy blocks deferred ({} total held), {} remaining tracked", toHeal.size(), canopy.size(), job.deferred.size(), snapshot.size());
+    }
+
+    public static boolean touchesChangedSnapshot(ServerLevel level, BlockPos pos) {
+        for (Job job : JOBS) {
+            if (job.level != level) { continue; }
+            if (changedSinceSnapshot(job, pos)) { return true; }
+            for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
+                if (changedSinceSnapshot(job, pos.offset(side))) { return true; }
+            }
+        }
+        return false;
+    }
+
+    private static boolean changedSinceSnapshot(Job job, BlockPos pos) {
+        BlockStatePosWrapper held = job.snapshot.get(pos);
+        return held != null && job.level.isLoaded(pos) && job.level.getBlockState(pos) != held.getState();
     }
 
     private static boolean isDeferredHealBlock(BlockState state) {
