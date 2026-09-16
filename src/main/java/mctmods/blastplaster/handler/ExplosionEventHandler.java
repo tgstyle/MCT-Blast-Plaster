@@ -26,6 +26,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.monster.Creeper;
@@ -45,6 +46,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.phys.Vec3;
 
 import net.neoforged.bus.api.SubscribeEvent;
@@ -912,6 +914,16 @@ public class ExplosionEventHandler {
     DamageSource source = event.getSource();
     if (!source.is(DamageTypeTags.IS_EXPLOSION)) { return; }
     if (Config.view(level).preventMobDrops()) { event.setCanceled(true); }
+  }
+
+  @SubscribeEvent public void onFallingBlockJoin(EntityJoinLevelEvent event) {
+    if (!(event.getLevel() instanceof ServerLevel level) || !(event.getEntity() instanceof FallingBlockEntity falling)) { return; }
+    BlockPos origin = falling.blockPosition();
+    WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(level);
+    if (healer == null || !healer.healPending(origin.below())) { return; }
+    event.setCanceled(true);
+    level.setBlock(origin, falling.getBlockState(), Block.UPDATE_CLIENTS);
+    level.getBlockTicks().clearArea(new BoundingBox(origin));
   }
 
   @SubscribeEvent public void onPrimedTntJoin(EntityJoinLevelEvent event) {
