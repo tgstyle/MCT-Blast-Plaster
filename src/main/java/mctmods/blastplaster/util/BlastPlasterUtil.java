@@ -137,7 +137,9 @@ public class BlastPlasterUtil {
                 }
             }
         }
-        toProcess.addAll(extras);
+        for (BlockStatePosWrapper extra : extras) {
+            if (affectedPos.add(extra.getPos())) { toProcess.add(extra); }
+        }
     }
 
     public record PendingDrop(Vec3 pos, ItemStack stack, boolean isGentle) {}
