@@ -14,8 +14,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.LevelAccessor;
-import net.minecraft.world.level.ServerLevelAccessor;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
@@ -296,10 +294,7 @@ public final class TreeCollector {
 
     static Tree collect(LevelAccessor level, BlockPos seed, int maxBlocks, Predicate<BlockPos> within) {
       Tree tree = new Tree();
-      Level world = level instanceof Level held ? held : level instanceof ServerLevelAccessor server ? server.getLevel() : null;
-      if (world == null) { return tree; }
-
-      BlockPos root = rootOf(world, seed);
+      BlockPos root = rootOf(level, seed);
       if (root == null) { return tree; }
 
       Set<BlockPos> wood = new HashSet<>();
@@ -357,21 +352,22 @@ public final class TreeCollector {
       return tree;
     }
 
-    @Nullable private static BlockPos rootOf(Level world, BlockPos seed) {
-      BlockState held = world.getBlockState(seed);
+    @Nullable private static BlockPos rootOf(LevelAccessor level, BlockPos seed) {
+      BlockState held = level.getBlockState(seed);
       if (TreeHelper.isRooty(held)) { return seed.immutable(); }
-      if (TreeHelper.isBranch(held)) { return rootFromBranch(world, seed); }
+      if (TreeHelper.isBranch(held)) { return rootFromBranch(level, seed); }
 
       for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
         BlockPos adj = seed.offset(side);
-        if (TreeHelper.isBranch(world.getBlockState(adj))) { return rootFromBranch(world, adj); }
+        if (TreeHelper.isBranch(level.getBlockState(adj))) { return rootFromBranch(level, adj); }
       }
       return null;
     }
 
-    @Nullable private static BlockPos rootFromBranch(Level world, BlockPos branch) {
-      BlockPos root = TreeHelper.findRootNode(world, branch);
-      return BlockPos.ZERO.equals(root) ? null : root.immutable();
+    @Nullable private static BlockPos rootFromBranch(LevelAccessor level, BlockPos branch) {
+      BlockState state = level.getBlockState(branch);
+      MapSignal signal = TreeHelper.getTreePart(state).analyse(state, level, branch, null, new MapSignal());
+      return signal.foundRoot ? signal.root.immutable() : null;
     }
 
     private record Collector(Set<BlockPos> nodes) implements NodeInspector {

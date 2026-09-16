@@ -42,6 +42,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
@@ -398,9 +399,12 @@ public class ExplosionEventHandler {
       return;
     }
 
-    if (event.getEntity() instanceof FallingBlockEntity falling) {
-      if (BlastPlasterUtil.shouldSuppressFallingBlock(event.getLevel(), falling)) {
+    if (event.getEntity() instanceof FallingBlockEntity falling && event.getLevel() instanceof ServerLevel serverLevel) {
+      if (BlastPlasterUtil.shouldSuppressFallingBlock(serverLevel, falling)) { event.setCanceled(true); }
+      else if (BlastPlasterUtil.holdsFallingBlock(serverLevel, falling)) {
         event.setCanceled(true);
+        serverLevel.setBlock(falling.blockPosition(), falling.getBlockState(), Block.UPDATE_CLIENTS);
+        serverLevel.getBlockTicks().clearArea(new BoundingBox(falling.blockPosition()));
       }
       return;
     }

@@ -1,8 +1,10 @@
 package mctmods.blastplaster.util;
 
+import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.worldhealer.RegionSnapshotHealer;
+import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -46,7 +48,7 @@ public class BlastPlasterUtil {
     public static final float ALEXSCAVES_NUKE_VISUAL_CHANCE = 0.01f;
     public static final int FALLING_BLOCK_SUPPRESS_TICKS = 25;
     public static final String BYPASS_TAG = "BlastPlasterBypass";
-    public static boolean isTreeWood(BlockState state) { return Config.isLog(state); }
+    public static boolean isTreeWood(BlockState state) { return Config.isLog(state) || (DT_LOADED && (TreeHelper.isBranch(state) || state.getBlock() instanceof TrunkShellBlock)); }
 
     public static final boolean DT_LOADED = ModList.get().isLoaded("dynamictrees");
     public static final boolean EO_LOADED = ModList.get().isLoaded("explosionoverhaul");
@@ -153,9 +155,12 @@ public class BlastPlasterUtil {
         return false;
     }
 
-    public static boolean shouldSuppressFallingBlock(Level level, FallingBlockEntity falling) {
-        if (!(level instanceof ServerLevel serverLevel)) { return false; }
-        return shouldSuppressLaunchAt(serverLevel, falling.position());
+    public static boolean shouldSuppressFallingBlock(ServerLevel level, FallingBlockEntity falling) { return shouldSuppressLaunchAt(level, falling.position()) && RegionSnapshotHealer.capturedBySnapshot(level, falling.blockPosition()); }
+
+    public static boolean holdsFallingBlock(ServerLevel level, FallingBlockEntity falling) {
+        BlockPos support = falling.blockPosition().below();
+        WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(level);
+        return (healer != null && healer.healPending(support)) || RegionSnapshotHealer.healsLater(level, support);
     }
 
     private static void addVerticalInDirection(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType, boolean upward) {
@@ -191,7 +196,9 @@ public class BlastPlasterUtil {
                 }
             }
         }
-        toProcess.addAll(extras);
+        for (BlockStatePosWrapper extra : extras) {
+            if (affectedPos.add(extra.getPos())) { toProcess.add(extra); }
+        }
     }
 
     public record PendingDrop(Vec3 pos, ItemStack stack, boolean isGentle) {}

@@ -325,6 +325,20 @@ public final class RegionSnapshotHealer {
         return false;
     }
 
+    public static boolean capturedBySnapshot(ServerLevel level, BlockPos pos) {
+        for (Job job : JOBS) {
+            if (job.level == level && job.snapshot.containsKey(pos)) { return true; }
+        }
+        return false;
+    }
+
+    public static boolean healsLater(ServerLevel level, BlockPos pos) {
+        for (Job job : JOBS) {
+            if (job.level == level && job.mode == ExplosionMode.HEAL && changedSinceSnapshot(job, pos)) { return true; }
+        }
+        return false;
+    }
+
     private static boolean changedSinceSnapshot(Job job, BlockPos pos) {
         BlockStatePosWrapper held = job.snapshot.get(pos);
         return held != null && job.level.isLoaded(pos) && job.level.getBlockState(pos) != held.getState();
