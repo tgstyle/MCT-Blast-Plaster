@@ -3,6 +3,7 @@ package mctmods.blastplaster.util;
 import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
+import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockOldLog;
@@ -166,9 +167,10 @@ public class BlastPlasterUtil {
         return false;
     }
 
-    public static boolean shouldSuppressFallingBlock(EntityFallingBlock falling) {
+    public static boolean holdsFallingBlock(EntityFallingBlock falling) {
         if (!(falling.world instanceof WorldServer)) { return false; }
-        return shouldSuppressLaunchAt((WorldServer) falling.world, falling.getPositionVector());
+        WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(falling.world);
+        return healer != null && healer.healPending(new BlockPos(falling).down());
     }
 
     private static void addVerticalInDirection(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, World world, BlockPos pos, Block blockType, boolean upward) {
@@ -204,7 +206,9 @@ public class BlastPlasterUtil {
                 }
             }
         }
-        toProcess.addAll(extras);
+        for (BlockStatePosWrapper extra : extras) {
+            if (affectedPos.add(extra.getPos())) { toProcess.add(extra); }
+        }
     }
 
     @SuppressWarnings("unused") public static boolean isTreeWood(IBlockState state) {

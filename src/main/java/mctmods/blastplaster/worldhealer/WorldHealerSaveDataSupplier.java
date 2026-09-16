@@ -69,6 +69,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
     private static final float MIN_LEAVES_PER_SEED = 0.8f;
     private static final int LEAF_BRUTE_RADIUS = 5;
     private final TickingHealList healTask = new TickingHealList();
+    private final Map<Long, Integer> pendingHeals = new HashMap<>();
     private World world;
 
     public WorldHealerSaveDataSupplier(String name) { super(name); }
@@ -81,9 +82,19 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
                 BlockStatePosWrapper first = blocksToHeal.iterator().next();
                 BlastPlaster.logger.info("Heal batch released: {} blocks at gameTime {} (first: {} at {})", blocksToHeal.size(), world.getTotalWorldTime(), first.getState().getBlock().getClass().getSimpleName(), first.getPos());
             }
-            for (BlockStatePosWrapper blockData : blocksToHeal) { heal(blockData); }
+            for (BlockStatePosWrapper blockData : blocksToHeal) {
+                pendingHeals.computeIfPresent(blockData.getPos().toLong(), (ignored, count) -> count > 1 ? count - 1 : null);
+                heal(blockData);
+            }
             markDirty();
         }
+    }
+
+    public boolean healPending(BlockPos pos) { return pendingHeals.containsKey(pos.toLong()); }
+
+    private void enqueue(int ticks, BlockStatePosWrapper wrapper) {
+        healTask.enqueue(ticks, wrapper);
+        pendingHeals.merge(wrapper.getPos().toLong(), 1, Integer::sum);
     }
 
     public List<BlockStatePosWrapper> prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, World world) { return prepareAndScheduleHealing(toHeal, affectedPos, world, 0); }
@@ -159,7 +170,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         int pairBase = groundEnd + 4;
         for (BlockStatePosWrapper w : dtPriority) {
             int tick = (w.getState().getBlock() instanceof BlockRooty) ? pairBase : pairBase + 2;
-            healTask.enqueue(tick, w);
+            enqueue(tick, w);
         }
 
         int woodTick = pairBase + 6;
@@ -170,20 +181,20 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         woodBatch.addAll(dtBranches);
         woodBatch.addAll(dtShells);
         woodBatch.addAll(canes);
-        for (BlockStatePosWrapper item : woodBatch) { healTask.enqueue(woodTick, item); }
+        for (BlockStatePosWrapper item : woodBatch) { enqueue(woodTick, item); }
 
         if (!dtSurfaceRoots.isEmpty()) {
             dtSurfaceRoots.sort((a, b) -> Integer.compare(BlastPlasterUtil.getDTRadius(b.getState()), BlastPlasterUtil.getDTRadius(a.getState())));
             int surfaceTick = woodTick + 4;
-            for (BlockStatePosWrapper item : dtSurfaceRoots) { healTask.enqueue(surfaceTick, item); }
+            for (BlockStatePosWrapper item : dtSurfaceRoots) { enqueue(surfaceTick, item); }
         }
 
         List<BlockStatePosWrapper> leafBatch = new ArrayList<>();
         leafBatch.addAll(dtLeaves);
         leafBatch.addAll(vanillaLeaves);
-        for (BlockStatePosWrapper item : leafBatch) { healTask.enqueue(leavesTick, item); }
+        for (BlockStatePosWrapper item : leafBatch) { enqueue(leavesTick, item); }
 
-        for (BlockStatePosWrapper item : dtFruitPods) { healTask.enqueue(fruitTick, item); }
+        for (BlockStatePosWrapper item : dtFruitPods) { enqueue(fruitTick, item); }
 
         if (!woodBatch.isEmpty() || !leafBatch.isEmpty() || !dtPriority.isEmpty()) {
             BlastPlaster.debug("Heal timeline: ground ends {}, {} rooty pairs at {}, {} wood at {}, {} surface roots at {}, {} leaves at {}, {} fruit/pods at {}", groundEnd, dtPriority.size(), pairBase, woodBatch.size(), woodTick, dtSurfaceRoots.size(), woodTick + 4, leafBatch.size(), leavesTick, dtFruitPods.size(), fruitTick);
@@ -194,7 +205,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
             int vineDelay = leavesTick + 80;
             int vineStep = Math.max(1, Math.min(12, 240 / vines.size()));
             for (BlockStatePosWrapper vine : vines) {
-                healTask.enqueue(vineDelay, vine);
+                enqueue(vineDelay, vine);
                 vineDelay += vineStep;
             }
         }
@@ -216,11 +227,11 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         for (List<BlockStatePosWrapper> layer : layers.values()) {
             int layerDelay = currentDelay;
             if (layer.size() == 1) {
-                healTask.enqueue(layerDelay, layer.get(0));
+                enqueue(layerDelay, layer.get(0));
                 currentDelay += 20;
             }
             else {
-                for (BlockStatePosWrapper wrapper : layer) { healTask.enqueue(layerDelay + world.rand.nextInt(var), wrapper); }
+                for (BlockStatePosWrapper wrapper : layer) { enqueue(layerDelay + world.rand.nextInt(var), wrapper); }
                 currentDelay += var;
             }
         }
@@ -321,7 +332,9 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
                 }
             }
         }
-        toHeal.addAll(extras);
+        for (BlockStatePosWrapper extra : extras) {
+            if (affectedPos.add(extra.getPos())) { toHeal.add(extra); }
+        }
     }
 
     public void addExtraTreeBlocks(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, World world) {
@@ -1101,7 +1114,7 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
             for (int b = 0; b < bdListTag.tagCount(); b++) {
                 BlockStatePosWrapper bd = new BlockStatePosWrapper();
                 bd.readNBT(bdListTag.getCompoundTagAt(b));
-                healTask.enqueue(Math.max(1, cumulative), bd);
+                enqueue(Math.max(1, cumulative), bd);
                 restored++;
             }
         }

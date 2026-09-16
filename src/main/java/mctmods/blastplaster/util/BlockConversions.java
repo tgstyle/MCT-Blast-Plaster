@@ -43,17 +43,19 @@ public final class BlockConversions {
 
     private static final class RuleSet {
         private final List<Rule> rules;
-        private final Set<Block> results;
+        private final Set<Block> blockResults;
+        private final Set<String> stateResults;
 
-        private RuleSet(List<Rule> rules, Set<Block> results) {
+        private RuleSet(List<Rule> rules, Set<Block> blockResults, Set<String> stateResults) {
             this.rules = rules;
-            this.results = results;
+            this.blockResults = blockResults;
+            this.stateResults = stateResults;
         }
 
-        private boolean isResult(IBlockState state) { return results.contains(state.getBlock()); }
+        private boolean isResult(IBlockState state) { return blockResults.contains(state.getBlock()) || stateResults.contains(stateKey(state)); }
     }
 
-    private static final RuleSet NONE = new RuleSet(new ArrayList<>(), new HashSet<>());
+    private static final RuleSet NONE = new RuleSet(new ArrayList<>(), new HashSet<>(), new HashSet<>());
 
     public static void applyAll(WorldServer world, List<BlockStatePosWrapper> wrappers) {
         if (wrappers.isEmpty()) { return; }
@@ -92,16 +94,19 @@ public final class BlockConversions {
 
     private static RuleSet parse(List<String> lines) {
         List<Rule> rules = new ArrayList<>();
-        Set<Block> results = new HashSet<>();
+        Set<Block> blockResults = new HashSet<>();
+        Set<String> stateResults = new HashSet<>();
         for (String line : lines) {
             Rule rule = parseRule(line);
             if (rule == null) { continue; }
             rules.add(rule);
-            if (rule.result != Blocks.AIR) { results.add(rule.result); }
+            if (rule.result == Blocks.AIR) { continue; }
+            if (rule.resultMeta >= 0) { stateResults.add(stateKey(stateFromMeta(rule.result, rule.resultMeta))); }
+            else { blockResults.add(rule.result); }
         }
         if (rules.isEmpty()) { return NONE; }
         BlastPlaster.logger.info("[BlastPlaster] Block conversions: {} rule(s) in force", rules.size());
-        return new RuleSet(rules, results);
+        return new RuleSet(rules, blockResults, stateResults);
     }
 
     @Nullable private static Rule parseRule(String line) {

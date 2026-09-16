@@ -291,7 +291,7 @@ public class ExplosionEventHandler {
         }
 
         if (entity instanceof EntityFallingBlock) {
-            if (BlastPlasterUtil.shouldSuppressFallingBlock((EntityFallingBlock) entity)) { event.setCanceled(true); }
+            if (BlastPlasterUtil.holdsFallingBlock((EntityFallingBlock) entity)) { event.setCanceled(true); }
             return;
         }
 
