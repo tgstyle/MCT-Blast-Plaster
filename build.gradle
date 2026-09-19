@@ -93,6 +93,7 @@ tasks.register('copyModsTomlForIntelliJ', Copy) {
 
 runs {
     configureEach { run ->
+        run.jvmArguments.add '-Xmx4G'
         run.workingDirectory = project.file("run/${run.name}")
 
         systemProperty 'forge.logging.markers', ''

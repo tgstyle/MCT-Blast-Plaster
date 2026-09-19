@@ -23,7 +23,9 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.ModList;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +64,8 @@ public class BlastPlasterUtil {
     private static final int KNOCK_ON_WINDOW = 20;
     private static boolean suppressingDrops;
     private static final Map<ResourceKey<Level>, Map<Long, Long>> blastPositions = new HashMap<>();
+    private static final Map<ResourceKey<Level>, Map<Long, Long>> ejectKnockOnPositions = new HashMap<>();
+    private static final Set<BlockPos> ejectedPositions = new HashSet<>();
 
     static {
         for (int x = -1; x <= 1; x++) {
@@ -80,24 +84,47 @@ public class BlastPlasterUtil {
 
     public static void setDropSuppression(boolean suppress) { suppressingDrops = suppress; }
 
-    public static void recordBlastPositions(ServerLevel level, List<BlockStatePosWrapper> removed) {
+    private static void recordPositions(Map<ResourceKey<Level>, Map<Long, Long>> windows, ServerLevel level, List<BlockStatePosWrapper> removed) {
         long now = level.getGameTime();
-        Map<Long, Long> tracked = blastPositions.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
+        Map<Long, Long> tracked = windows.computeIfAbsent(level.dimension(), ignored -> new HashMap<>());
         tracked.values().removeIf(expire -> expire < now);
         for (BlockStatePosWrapper wrapper : removed) { tracked.put(wrapper.getPos().asLong(), now + KNOCK_ON_WINDOW); }
     }
 
-    public static boolean knockedLooseByBlast(ServerLevel level, BlockPos pos) {
+    public static void recordBlastPositions(ServerLevel level, List<BlockStatePosWrapper> removed) { recordPositions(blastPositions, level, removed); }
+
+    public static void recordEjectPositions(ServerLevel level, List<BlockStatePosWrapper> removed) { recordPositions(ejectKnockOnPositions, level, removed); }
+
+    public static boolean outsideBlast(ServerLevel level, BlockPos pos) {
         Map<Long, Long> tracked = blastPositions.get(level.dimension());
+        return tracked == null || !tracked.containsKey(pos.asLong());
+    }
+
+    private static boolean touchesWindow(Map<Long, Long> tracked, BlockPos pos, long now) {
         if (tracked == null || tracked.isEmpty()) { return false; }
-        long now = level.getGameTime();
         tracked.values().removeIf(expire -> expire < now);
         boolean touching = tracked.containsKey(pos.asLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.offset(offset).asLong()));
         if (touching) { tracked.put(pos.asLong(), now + KNOCK_ON_WINDOW); }
         return touching;
     }
 
-    public static boolean shouldSuppressItemDrop(ItemEntity item) { return suppressingDrops && !item.getPersistentData().getBoolean(BYPASS_TAG).orElse(false); }
+    public static boolean knockedLooseByBlast(ServerLevel level, BlockPos pos) {
+        long now = level.getGameTime();
+        if (touchesWindow(ejectKnockOnPositions.get(level.dimension()), pos, now)) { return false; }
+        return touchesWindow(blastPositions.get(level.dimension()), pos, now);
+    }
+
+    public static void setEjectedPositions(Collection<BlockStatePosWrapper> removed) {
+        ejectedPositions.clear();
+        for (BlockStatePosWrapper wrapper : removed) { ejectedPositions.add(wrapper.getPos()); }
+    }
+
+    public static void clearEjectedPositions() { ejectedPositions.clear(); }
+
+    public static boolean shouldSuppressItemDrop(ItemEntity item) {
+        if (!suppressingDrops || item.getPersistentData().getBoolean(BYPASS_TAG).orElse(false)) { return false; }
+        return ejectedPositions.isEmpty() || ejectedPositions.contains(item.blockPosition());
+    }
 
     public static void addVerticalColumn(List<BlockStatePosWrapper> extras, Set<BlockPos> affectedPos, Level level, BlockPos pos, Block blockType) {
         int h = 1;

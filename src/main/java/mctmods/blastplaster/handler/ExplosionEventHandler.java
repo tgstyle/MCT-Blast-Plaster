@@ -177,7 +177,10 @@ public class ExplosionEventHandler {
 
       BlockConversions.applyAll(serverLevel, toProcess);
 
-      if (Config.view(level).enableDropSuppression()) { BlastPlasterUtil.recordBlastPositions(serverLevel, toProcess); }
+      if (Config.view(level).enableDropSuppression()) {
+        if (effectiveMode == ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.recordEjectPositions(serverLevel, toProcess); }
+        else { BlastPlasterUtil.recordBlastPositions(serverLevel, toProcess); }
+      }
 
       List<BlockStatePosWrapper> fullToProcessForDestroy = new ArrayList<>(toProcess);
 
@@ -236,6 +239,7 @@ public class ExplosionEventHandler {
 
       BlastPlasterUtil.setDtDestroyIgnored(true);
       BlastPlasterUtil.setDropSuppression(Config.view(level).enableDropSuppression());
+      if (effectiveMode == ExplosionMode.EJECT_DROPS) { BlastPlasterUtil.setEjectedPositions(fullToProcessForDestroy); }
       try {
         for (BlockStatePosWrapper wrapper : fullToProcessForDestroy) {
           BlockPos pos = wrapper.getPos();
@@ -271,6 +275,7 @@ public class ExplosionEventHandler {
       finally {
         BlastPlasterUtil.setDtDestroyIgnored(false);
         BlastPlasterUtil.setDropSuppression(false);
+        BlastPlasterUtil.clearEjectedPositions();
       }
 
       if (!pendingRealDrops.isEmpty()) {
@@ -904,7 +909,14 @@ public class ExplosionEventHandler {
 
   @SubscribeEvent public void onBlockDrops(BlockDropsEvent event) {
     if (event.getBreaker() != null) { return; }
-    if (BlastPlasterUtil.knockedLooseByBlast(event.getLevel(), event.getPos())) { event.setCanceled(true); }
+    ServerLevel level = event.getLevel();
+    BlockPos pos = event.getPos();
+    boolean outsideBlast = BlastPlasterUtil.outsideBlast(level, pos);
+    if (BlastPlasterUtil.knockedLooseByBlast(level, pos)) {
+      event.setCanceled(true);
+      WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(level);
+      if (outsideBlast && healer != null) { healer.healKnockedLoose(pos, event.getState()); }
+    }
   }
 
   @SubscribeEvent public void onLivingDrops(LivingDropsEvent event) {
