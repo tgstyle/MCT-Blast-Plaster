@@ -35,7 +35,9 @@ import net.minecraftforge.common.util.FakePlayerFactory;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,9 +50,11 @@ public class BlastPlasterUtil {
     public static final String BYPASS_TAG = "BlastPlasterBypass";
     public static final boolean DT_LOADED = BlastPlaster.dynamictrees;
     public static final List<BlockPos> NEIGHBOR_POSITIONS = new ArrayList<>(26);
+    public static final int KNOCK_ON_WINDOW = 20;
     private static final List<ExplosionArea> recentExplosions = new ArrayList<>();
     private static final Map<Integer, Long2LongOpenHashMap> blastPositions = new HashMap<>();
-    private static final int KNOCK_ON_WINDOW = 20;
+    private static final Map<Integer, Long2LongOpenHashMap> ejectKnockOnPositions = new HashMap<>();
+    private static final Set<BlockPos> ejectedPositions = new HashSet<>();
     private static boolean suppressingDrops;
 
     static {
@@ -133,25 +137,45 @@ public class BlastPlasterUtil {
 
     public static void setDropSuppression(boolean suppress) { suppressingDrops = suppress; }
 
-    public static boolean shouldSuppressItemDrop(EntityItem item) { return suppressingDrops && !item.getEntityData().getBoolean(BYPASS_TAG); }
+    public static void setEjectedPositions(Collection<BlockStatePosWrapper> ejected) {
+        ejectedPositions.clear();
+        for (BlockStatePosWrapper wrapper : ejected) { ejectedPositions.add(wrapper.getPos()); }
+    }
 
-    public static void recordBlastPositions(WorldServer world, List<BlockStatePosWrapper> removed) {
+    public static void clearEjectedPositions() { ejectedPositions.clear(); }
+
+    public static boolean shouldSuppressItemDrop(EntityItem item) { return suppressingDrops && !item.getEntityData().getBoolean(BYPASS_TAG) && (ejectedPositions.isEmpty() || ejectedPositions.contains(new BlockPos(item))); }
+
+    private static void recordPositions(Map<Integer, Long2LongOpenHashMap> windows, WorldServer world, List<BlockStatePosWrapper> removed) {
         long now = world.getTotalWorldTime();
-        Long2LongOpenHashMap tracked = trackedBlastPositions(world, now);
+        Long2LongOpenHashMap tracked = trackedPositions(windows, world, now);
         for (BlockStatePosWrapper wrapper : removed) { tracked.put(wrapper.getPos().toLong(), now + KNOCK_ON_WINDOW); }
     }
 
-    public static boolean knockedLooseByBlast(WorldServer world, BlockPos pos) {
-        long now = world.getTotalWorldTime();
-        Long2LongOpenHashMap tracked = trackedBlastPositions(world, now);
+    public static void recordBlastPositions(WorldServer world, List<BlockStatePosWrapper> removed) { recordPositions(blastPositions, world, removed); }
+
+    public static void recordEjectPositions(WorldServer world, List<BlockStatePosWrapper> removed) { recordPositions(ejectKnockOnPositions, world, removed); }
+
+    public static boolean outsideBlast(WorldServer world, BlockPos pos) {
+        Long2LongOpenHashMap tracked = blastPositions.get(world.provider.getDimension());
+        return tracked == null || !tracked.containsKey(pos.toLong());
+    }
+
+    private static boolean touchesWindow(Long2LongOpenHashMap tracked, BlockPos pos, long now) {
         if (tracked.isEmpty()) { return false; }
         boolean touching = tracked.containsKey(pos.toLong()) || NEIGHBOR_POSITIONS.stream().anyMatch(offset -> tracked.containsKey(pos.add(offset).toLong()));
         if (touching) { tracked.put(pos.toLong(), now + KNOCK_ON_WINDOW); }
         return touching;
     }
 
-    private static Long2LongOpenHashMap trackedBlastPositions(WorldServer world, long now) {
-        Long2LongOpenHashMap tracked = blastPositions.computeIfAbsent(world.provider.getDimension(), k -> new Long2LongOpenHashMap());
+    public static boolean knockedLooseByBlast(WorldServer world, BlockPos pos) {
+        long now = world.getTotalWorldTime();
+        if (touchesWindow(trackedPositions(ejectKnockOnPositions, world, now), pos, now)) { return false; }
+        return touchesWindow(trackedPositions(blastPositions, world, now), pos, now);
+    }
+
+    private static Long2LongOpenHashMap trackedPositions(Map<Integer, Long2LongOpenHashMap> windows, WorldServer world, long now) {
+        Long2LongOpenHashMap tracked = windows.computeIfAbsent(world.provider.getDimension(), k -> new Long2LongOpenHashMap());
         tracked.long2LongEntrySet().removeIf(e -> e.getLongValue() < now);
         return tracked;
     }

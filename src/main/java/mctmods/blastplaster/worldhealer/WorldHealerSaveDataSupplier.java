@@ -68,8 +68,11 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
     private static final float MIN_TREE_CONFIDENCE = 0.65f;
     private static final float MIN_LEAVES_PER_SEED = 0.8f;
     private static final int LEAF_BRUTE_RADIUS = 5;
+    private static final int KNOCKED_LOOSE_DELAY = 10;
     private final TickingHealList healTask = new TickingHealList();
     private final Map<Long, Integer> pendingHeals = new HashMap<>();
+    private final Map<Long, IBlockState> doorUpperHalves = new HashMap<>();
+    private long doorUpperHalvesExpire;
     private World world;
 
     public WorldHealerSaveDataSupplier(String name) { super(name); }
@@ -95,6 +98,79 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
     private void enqueue(int ticks, BlockStatePosWrapper wrapper) {
         healTask.enqueue(ticks, wrapper);
         pendingHeals.merge(wrapper.getPos().toLong(), 1, Integer::sum);
+    }
+
+    public void recordDoorUpperHalves(List<BlockStatePosWrapper> cleared) {
+        doorUpperHalves.clear();
+        doorUpperHalvesExpire = world.getTotalWorldTime() + BlastPlasterUtil.KNOCK_ON_WINDOW;
+        for (BlockStatePosWrapper wrapper : cleared) {
+            BlockPos lowerPos = wrapper.getPos().up();
+            IBlockState lower = world.getBlockState(lowerPos);
+            if (!(lower.getBlock() instanceof BlockDoor) || lower.getValue(BlockDoor.HALF) != BlockDoor.EnumDoorHalf.LOWER) { continue; }
+            BlockPos upperPos = lowerPos.up();
+            IBlockState upper = world.getBlockState(upperPos);
+            if (upper.getBlock() == lower.getBlock()) { doorUpperHalves.put(upperPos.toLong(), upper); }
+        }
+    }
+
+    private IBlockState recordedDoorUpperHalf(BlockPos pos, Block block) {
+        if (world.getTotalWorldTime() > doorUpperHalvesExpire) { doorUpperHalves.clear(); }
+        IBlockState recorded = doorUpperHalves.get(pos.toLong());
+        return recorded != null && recorded.getBlock() == block ? recorded : null;
+    }
+
+    public void healKnockedLoose(BlockPos pos, IBlockState state) {
+        if (healPending(pos)) { return; }
+        BlockStatePosWrapper otherHalf = otherHalfOf(pos, state);
+        int healTicks = otherHalf == null ? -1 : lastHealAmong(Collections.singleton(otherHalf.getPos().toLong()));
+        boolean otherHalfPending = healTicks >= 0;
+        if (!otherHalfPending) {
+            Set<Long> around = new HashSet<>();
+            for (BlockPos offset : BlastPlasterUtil.NEIGHBOR_POSITIONS) { around.add(pos.add(offset).toLong()); }
+            int supportTicks = lastHealAmong(around);
+            if (supportTicks < 0) { return; }
+            healTicks = supportTicks + KNOCKED_LOOSE_DELAY;
+        }
+        enqueue(healTicks, new BlockStatePosWrapper(world, pos, state));
+        if (otherHalf != null && !otherHalfPending) { enqueue(healTicks, otherHalf); }
+        markDirty();
+        BlastPlaster.debug("Knocked loose: {} at {} heals in {} ticks", state.getBlock().getClass().getSimpleName(), pos, healTicks);
+    }
+
+    private BlockStatePosWrapper otherHalfOf(BlockPos pos, IBlockState state) {
+        Block block = state.getBlock();
+        BlockPos otherPos;
+        IBlockState derived;
+        if (block instanceof BlockDoor) {
+            boolean lower = state.getValue(BlockDoor.HALF) == BlockDoor.EnumDoorHalf.LOWER;
+            otherPos = lower ? pos.up() : pos.down();
+            IBlockState recorded = lower ? recordedDoorUpperHalf(otherPos, block) : null;
+            derived = recorded != null ? recorded : state.withProperty(BlockDoor.HALF, lower ? BlockDoor.EnumDoorHalf.UPPER : BlockDoor.EnumDoorHalf.LOWER);
+        }
+        else if (block instanceof BlockDoublePlant) {
+            boolean lower = state.getValue(BlockDoublePlant.HALF) == BlockDoublePlant.EnumBlockHalf.LOWER;
+            otherPos = lower ? pos.up() : pos.down();
+            derived = state.withProperty(BlockDoublePlant.HALF, lower ? BlockDoublePlant.EnumBlockHalf.UPPER : BlockDoublePlant.EnumBlockHalf.LOWER);
+        }
+        else { return null; }
+        IBlockState inWorld = world.getBlockState(otherPos);
+        return new BlockStatePosWrapper(world, otherPos, inWorld.getBlock() == block ? inWorld : derived);
+    }
+
+    private int lastHealAmong(Set<Long> positions) {
+        int last = -1;
+        if (positions.stream().noneMatch(pendingHeals::containsKey)) { return last; }
+        int elapsed = 0;
+        for (TickContainer<Collection<BlockStatePosWrapper>> container : healTask.getQueue()) {
+            elapsed += container.getTicks();
+            for (BlockStatePosWrapper wrapper : container.getValue()) {
+                if (positions.contains(wrapper.getPos().toLong())) {
+                    last = elapsed;
+                    break;
+                }
+            }
+        }
+        return last;
     }
 
     public List<BlockStatePosWrapper> prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, World world) { return prepareAndScheduleHealing(toHeal, affectedPos, world, 0); }
@@ -216,8 +292,18 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
 
     private int scheduleLayeredHealing(List<BlockStatePosWrapper> blocks, int baseDelay) {
         if (blocks.isEmpty()) { return baseDelay; }
+        Set<BlockPos> layered = new HashSet<>();
+        for (BlockStatePosWrapper wrapper : blocks) { layered.add(wrapper.getPos()); }
+        Map<BlockPos, BlockStatePosWrapper> upperHalves = new HashMap<>();
+        for (BlockStatePosWrapper wrapper : blocks) {
+            if (isUpperDoorHalf(wrapper.getState())) {
+                BlockPos lowerPos = wrapper.getPos().down();
+                if (layered.contains(lowerPos)) { upperHalves.put(lowerPos, wrapper); }
+            }
+        }
         TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
         for (BlockStatePosWrapper wrapper : blocks) {
+            if (isUpperDoorHalf(wrapper.getState()) && upperHalves.containsKey(wrapper.getPos().down())) { continue; }
             int y = wrapper.getPos().getY();
             List<BlockStatePosWrapper> layer = layers.computeIfAbsent(y, k -> new ArrayList<>());
             layer.add(wrapper);
@@ -227,16 +313,26 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
         for (List<BlockStatePosWrapper> layer : layers.values()) {
             int layerDelay = currentDelay;
             if (layer.size() == 1) {
-                enqueue(layerDelay, layer.get(0));
+                enqueueWithUpperHalf(layerDelay, layer.get(0), upperHalves);
                 currentDelay += 20;
             }
             else {
-                for (BlockStatePosWrapper wrapper : layer) { enqueue(layerDelay + world.rand.nextInt(var), wrapper); }
+                for (BlockStatePosWrapper wrapper : layer) { enqueueWithUpperHalf(layerDelay + world.rand.nextInt(var), wrapper, upperHalves); }
                 currentDelay += var;
             }
         }
         return currentDelay;
     }
+
+    private void enqueueWithUpperHalf(int ticks, BlockStatePosWrapper wrapper, Map<BlockPos, BlockStatePosWrapper> upperHalves) {
+        enqueue(ticks, wrapper);
+        BlockStatePosWrapper upper = upperHalves.get(wrapper.getPos());
+        if (upper == null) { return; }
+        enqueue(ticks, upper);
+        BlastPlaster.debug("Door upper half {} enqueued with lower half {} at tick {}", upper.getPos(), wrapper.getPos(), ticks);
+    }
+
+    private static boolean isUpperDoorHalf(IBlockState state) { return state.getBlock() instanceof BlockDoor && state.getValue(BlockDoor.HALF) == BlockDoor.EnumDoorHalf.UPPER; }
 
     private List<BlockStatePosWrapper> extractDtPriorityBlocks(List<BlockStatePosWrapper> toHeal) {
         List<BlockStatePosWrapper> priority = new ArrayList<>();
