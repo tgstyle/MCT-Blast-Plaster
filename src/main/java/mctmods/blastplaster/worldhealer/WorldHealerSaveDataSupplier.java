@@ -27,6 +27,7 @@ import net.minecraft.world.level.block.VineBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -35,6 +36,7 @@ import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,6 +56,7 @@ public class WorldHealerSaveDataSupplier extends SavedData {
   private Level level;
   private final TickingHealList healTask = new TickingHealList();
   private final Map<Long, Integer> pendingHeals = new HashMap<>();
+  private static final int KNOCKED_LOOSE_DELAY = 10;
   private boolean dirtyFlag = false;
   static final String DATAKEY = BlastPlaster.MODID;
 
@@ -80,6 +83,41 @@ public class WorldHealerSaveDataSupplier extends SavedData {
   private void enqueue(int ticks, BlockStatePosWrapper wrapper) {
     healTask.enqueue(ticks, wrapper);
     pendingHeals.merge(wrapper.getPos().asLong(), 1, Integer::sum);
+  }
+
+  public void healKnockedLoose(BlockPos pos, BlockState state) {
+    if (healPending(pos)) { return; }
+    int healTicks = -1;
+    if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)) {
+      BlockPos otherHalf = state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.LOWER ? pos.above() : pos.below();
+      healTicks = lastHealAmong(Set.of(otherHalf.asLong()));
+    }
+    if (healTicks < 0) {
+      Set<Long> around = new HashSet<>();
+      for (BlockPos offset : BlastPlasterUtil.NEIGHBOR_POSITIONS) { around.add(pos.offset(offset).asLong()); }
+      int supportTicks = lastHealAmong(around);
+      if (supportTicks < 0) { return; }
+      healTicks = supportTicks + KNOCKED_LOOSE_DELAY;
+    }
+    enqueue(healTicks, new BlockStatePosWrapper(level, pos, state));
+    dirtyFlag = true;
+    BlastPlaster.debug("Knocked loose: {} at {} heals in {} ticks", state.getBlock().getClass().getSimpleName(), pos, healTicks);
+  }
+
+  private int lastHealAmong(Set<Long> positions) {
+    int last = -1;
+    if (positions.stream().noneMatch(pendingHeals::containsKey)) { return last; }
+    int elapsed = 0;
+    for (TickContainer<Collection<BlockStatePosWrapper>> container : healTask.getQueue()) {
+      elapsed += container.getTicks();
+      for (BlockStatePosWrapper wrapper : container.getValue()) {
+        if (positions.contains(wrapper.getPos().asLong())) {
+          last = elapsed;
+          break;
+        }
+      }
+    }
+    return last;
   }
 
   public void prepareAndScheduleHealing(List<BlockStatePosWrapper> toHeal) {
@@ -212,8 +250,21 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     if (blocks.isEmpty()) { return baseDelay; }
     int currentDelay = baseDelay;
 
+    Set<BlockPos> positions = new HashSet<>();
+    for (BlockStatePosWrapper wrapper : blocks) { positions.add(wrapper.getPos()); }
+
+    Map<BlockPos, BlockStatePosWrapper> upperHalves = new HashMap<>();
+    for (BlockStatePosWrapper wrapper : blocks) {
+      BlockState state = wrapper.getState();
+      if (!state.is(BlockTags.DOORS) || !state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)) { continue; }
+      if (state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) != DoubleBlockHalf.UPPER) { continue; }
+      BlockPos lower = wrapper.getPos().below();
+      if (positions.contains(lower)) { upperHalves.put(lower, wrapper); }
+    }
+
     TreeMap<Integer, List<BlockStatePosWrapper>> layers = new TreeMap<>();
     for (BlockStatePosWrapper wrapper : blocks) {
+      if (upperHalves.get(wrapper.getPos().below()) == wrapper) { continue; }
       layers.computeIfAbsent(wrapper.getPos().getY(), ignored -> new ArrayList<>()).add(wrapper);
     }
 
@@ -221,17 +272,26 @@ public class WorldHealerSaveDataSupplier extends SavedData {
     for (List<BlockStatePosWrapper> layer : layers.values()) {
       int layerDelay = currentDelay;
       if (layer.size() == 1) {
-        enqueue(layerDelay, layer.getFirst());
+        enqueueWithUpperHalf(layerDelay, layer.getFirst(), upperHalves);
         currentDelay += 20;
       } else {
         for (BlockStatePosWrapper wrapper : layer) {
           int delay = layerDelay + level.random.nextInt(var);
-          enqueue(delay, wrapper);
+          enqueueWithUpperHalf(delay, wrapper, upperHalves);
         }
         currentDelay += var;
       }
     }
     return currentDelay;
+  }
+
+  private void enqueueWithUpperHalf(int ticks, BlockStatePosWrapper wrapper, Map<BlockPos, BlockStatePosWrapper> upperHalves) {
+    enqueue(ticks, wrapper);
+    BlockStatePosWrapper upper = upperHalves.get(wrapper.getPos());
+    if (upper != null) {
+      enqueue(ticks, upper);
+      BlastPlaster.debug("Door upper half {} enqueued with lower half {} at tick {}", upper.getPos(), wrapper.getPos(), ticks);
+    }
   }
 
   private List<BlockStatePosWrapper> extractDtPriorityBlocks(List<BlockStatePosWrapper> toHeal) {

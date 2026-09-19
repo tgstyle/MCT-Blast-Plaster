@@ -97,6 +97,7 @@ tasks.register('copyModsTomlForIntelliJ', Copy) {
 
 runs {
     configureEach { run ->
+        run.jvmArguments.add '-Xmx4G'
         println "DEBUG configureEach: name=${run.name}, class=${run.getClass().name}, project.mod_id=${project.mod_id}"
 
         run.workingDirectory = project.file("run/${run.name}")
