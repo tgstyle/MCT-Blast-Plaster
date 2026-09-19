@@ -1,11 +1,14 @@
 package mctmods.blastplaster.util;
 
+import mctmods.blastplaster.BlastPlaster;
 import mctmods.blastplaster.Config;
+import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
@@ -25,8 +28,15 @@ public class KnockOnDropModifier extends LootModifier {
         Vec3 origin = context.getParamOrNull(LootContextParams.ORIGIN);
         if (origin == null || !context.hasParam(LootContextParams.BLOCK_STATE)) { return generatedLoot; }
         if (context.hasParam(LootContextParams.THIS_ENTITY) || context.hasParam(LootContextParams.EXPLOSION_RADIUS)) { return generatedLoot; }
-        if (!Config.view(context.getLevel()).enableDropSuppression()) { return generatedLoot; }
-        if (BlastPlasterUtil.knockedLooseByBlast(context.getLevel(), BlockPos.containing(origin))) { return new ObjectArrayList<>(); }
+        ServerLevel level = context.getLevel();
+        if (!Config.view(level).enableDropSuppression()) { return generatedLoot; }
+        BlockPos pos = BlockPos.containing(origin);
+        boolean outsideBlast = BlastPlasterUtil.outsideBlast(level, pos);
+        if (BlastPlasterUtil.knockedLooseByBlast(level, pos)) {
+            WorldHealerSaveDataSupplier healer = BlastPlaster.getWorldHealer(level);
+            if (outsideBlast && healer != null) { healer.healKnockedLoose(pos, context.getParam(LootContextParams.BLOCK_STATE)); }
+            return new ObjectArrayList<>();
+        }
         return generatedLoot;
     }
 

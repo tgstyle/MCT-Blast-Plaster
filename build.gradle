@@ -123,6 +123,7 @@ legacyForge {
             programArguments.addAll '--nogui'
         }
         configureEach {
+            jvmArgument '-Xmx4G'
             gameDirectory = project.file('run')
         }
     }

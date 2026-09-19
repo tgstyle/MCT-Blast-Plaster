@@ -199,14 +199,19 @@ public class ExplosionEventHandler {
 
       BlockConversions.applyAll(serverLevel, toProcess);
 
-      boolean suppressDrops = effectiveMode != ExplosionMode.EJECT_DROPS && Config.view(level).enableDropSuppression();
+      boolean ejectDrops = effectiveMode == ExplosionMode.EJECT_DROPS;
+      boolean suppressionEnabled = Config.view(level).enableDropSuppression();
+      boolean suppressDrops = !ejectDrops && suppressionEnabled;
       if (suppressDrops && effectiveMode == ExplosionMode.HEAL) { BlastPlasterUtil.recordLaunchArea(serverLevel, affectedPos); }
 
       explosion.getToBlow().removeAll(affectedPos);
 
       List<BlockStatePosWrapper> toClear = toProcess;
       if (worldHealer != null && eoSnapshot == null) { toClear = worldHealer.prepareAndScheduleHealing(toProcess, affectedPos, serverLevel); }
-      if (suppressDrops) { BlastPlasterUtil.recordBlastPositions(serverLevel, toClear); }
+      if (suppressionEnabled) {
+        if (ejectDrops) { BlastPlasterUtil.recordEjectPositions(serverLevel, toClear); }
+        else { BlastPlasterUtil.recordBlastPositions(serverLevel, toClear); }
+      }
 
       List<BlastPlasterUtil.PendingDrop> pendingRealDrops = new ArrayList<>();
 
@@ -257,7 +262,8 @@ public class ExplosionEventHandler {
       }
 
       BlastPlasterUtil.setDtDestroyIgnored(true);
-      BlastPlasterUtil.setDropSuppression(suppressDrops);
+      if (ejectDrops) { BlastPlasterUtil.setEjectedPositions(toClear); }
+      BlastPlasterUtil.setDropSuppression(suppressionEnabled);
       try {
         for (BlockStatePosWrapper wrapper : toClear) {
           BlockPos pos = wrapper.getPos();
@@ -292,6 +298,7 @@ public class ExplosionEventHandler {
       finally {
         BlastPlasterUtil.setDtDestroyIgnored(false);
         BlastPlasterUtil.setDropSuppression(false);
+        BlastPlasterUtil.clearEjectedPositions();
       }
 
       if (!pendingRealDrops.isEmpty()) {
