@@ -42,6 +42,8 @@ tasks.withType(Jar).configureEach {
 ext {
     mod_id = gradleProps['mod_id']
     version_minecraft = versionProps['version_mc']
+    version_minecraft_range = versionProps['version_mc_range']
+    version_minecraft_label = versionProps['version_mc_label']
     version_neoforge = versionProps['version_neoforge']
     version_neoforge_min = versionProps['version_neoforge_min']
     version_dynamictrees_curse = versionProps['version_dynamictrees_curse']
@@ -57,6 +59,7 @@ def version_replaces = {
             'version'        : project.version,
             'build_number'   : project.ext.get('version_buildnumber') ?: version_buildnumber,
             'version_mc'     : version_minecraft,
+            'version_mc_range' : version_minecraft_range,
             'version_neoforge' : version_neoforge,
             'version_neoforge_min' : version_neoforge_min,
             'version_dynamictrees_min' : version_dynamictrees_min,
@@ -165,7 +168,7 @@ build.dependsOn bumpVersion
 
 tasks.register('sourcesJar', Jar) {
     dependsOn classes
-    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
+    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft_label}")
     archiveClassifier = 'sources'
     from sourceSets.main.allSource
 }
@@ -240,6 +243,6 @@ jar.dependsOn bumpVersion
 sourcesJar.dependsOn bumpVersion
 
 jar {
-    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
+    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft_label}")
     archiveClassifier.set('')
 }
