@@ -166,17 +166,6 @@ tasks.register('bumpVersion') {
 
 build.dependsOn bumpVersion
 
-tasks.register('sourcesJar', Jar) {
-    dependsOn classes
-    archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft_label}")
-    archiveClassifier = 'sources'
-    from sourceSets.main.allSource
-}
-
-artifacts {
-    archives sourcesJar
-}
-
 void minimizePNGFile(File file) {
     long size = file.length()
     ExecOperations execOps = project.services.get(ExecOperations)
@@ -240,7 +229,16 @@ idea {
 
 processResources.dependsOn bumpVersion
 jar.dependsOn bumpVersion
-sourcesJar.dependsOn bumpVersion
+
+def devSyncScript = null
+for (def dir = rootDir; dir != null && devSyncScript == null; dir = dir.parentFile) {
+    def candidate = new File(dir, '#scripts/mods-devsync.gradle')
+    if (candidate.isFile()) { devSyncScript = candidate }
+}
+if (devSyncScript != null) {
+    apply from: devSyncScript
+    build.finalizedBy 'devSync'
+}
 
 jar {
     archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft_label}")
