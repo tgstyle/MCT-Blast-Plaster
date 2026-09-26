@@ -48,7 +48,7 @@ public class BlastPlasterUtil {
 
     public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
 
-    public static boolean isTreeWood(BlockState state) { return Config.isLog(state); }
+    public static boolean isTreeWood(BlockState state) { return Config.isLog(state) || (DT_LOADED && (TreeHelper.isBranch(state) || state.getBlock() instanceof TrunkShellBlock)); }
 
     public static boolean isDynamicTreesAssembly(BlockState state) {
         if (!DT_LOADED) { return false; }
