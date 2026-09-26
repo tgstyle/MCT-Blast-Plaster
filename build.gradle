@@ -203,15 +203,7 @@ tasks.register('devJar', Jar) {
     from sourceSets.main.output
 }
 
-tasks.register('sourcesJar', Jar) {
-    dependsOn classes
-    archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
-    archiveClassifier = 'sources'
-    from sourceSets.main.allSource
-}
-
 artifacts {
-    archives sourcesJar
     archives devJar
 }
 
@@ -278,11 +270,20 @@ idea {
 
 processResources.dependsOn bumpVersion
 jar.dependsOn bumpVersion
-sourcesJar.dependsOn bumpVersion
-devJar.dependsOn bumpVersion
+devJar.mustRunAfter bumpVersion
 build.dependsOn devJar
 
 jar {
     archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
     archiveClassifier.set('')
+}
+
+def devSyncScript = null
+for (def dir = rootDir; dir != null && devSyncScript == null; dir = dir.parentFile) {
+    def candidate = new File(dir, '#scripts/mods-devsync.gradle')
+    if (candidate.isFile()) { devSyncScript = candidate }
+}
+if (devSyncScript != null) {
+    apply from: devSyncScript
+    build.finalizedBy 'devSync'
 }
