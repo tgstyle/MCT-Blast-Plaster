@@ -97,21 +97,22 @@ tasks.register('copyModsTomlForIntelliJ', Copy) {
 runs {
     configureEach { run ->
         run.jvmArguments.add '-Xmx4G'
+        run.jvmArguments.add '-XX:StartFlightRecording=maxsize=512M,dumponexit=true,filename=logs/profile.jfr,settings=profile'
         run.workingDirectory = project.file("run/${run.name}")
 
-        systemProperty 'forge.logging.markers', ''
-        systemProperty 'forge.logging.console.level', 'debug'
-        modSource project.sourceSets.main
+        run.systemProperty 'forge.logging.markers', ''
+        run.systemProperty 'forge.logging.console.level', 'debug'
+        run.modSource(sourceSets.main as SourceSet)
     }
 
-    client {
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
-        arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
+    client { run ->
+        run.systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
+        run.arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
     }
 
-    server {
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
-        argument '--nogui'
+    server { run ->
+        run.systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
+        run.argument '--nogui'
     }
 }
 
