@@ -1,5 +1,6 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import java.security.MessageDigest
 
 plugins {
     id 'idea'
@@ -7,6 +8,20 @@ plugins {
     id 'net.neoforged.gradle.userdev' version '7.1.38'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.6'
     id 'eclipse'
+}
+
+class JarStamp {
+    static String hash(Set<File> files, File versionProps, File root) {
+        def digest = MessageDigest.getInstance('SHA-256')
+        files.sort { it.path }.each { File file ->
+            digest.update(root.toPath().relativize(file.toPath()).toString().getBytes('UTF-8'))
+            digest.update(file.bytes)
+        }
+        versionProps.readLines().findAll { !it.startsWith('#') && !it.startsWith('build_number=') }.sort().each { digest.update(it.getBytes('UTF-8')) }
+        digest.digest().encodeHex().toString()
+    }
+
+    static boolean changed(Set<File> files, File versionProps, File root, File stamp) { !stamp.isFile() || stamp.text != hash(files, versionProps, root) }
 }
 
 configurations.configureEach {
@@ -135,8 +150,17 @@ if (customGradle.exists()) {
     apply from: customGradle
 }
 
+def stampInputs = files(sourceSets.main.java.srcDirs, sourceSets.main.resources.srcDirs, file('gradle.properties'), file('build.gradle'), rootProject.file('custom.gradle')).asFileTree
+def stampProps = file('version.properties')
+def stampRoot = rootDir
+def stampFile = layout.buildDirectory.file('jar-inputs.sha256')
+def stampStage = stage ? "-${stage}" : ""
+def builtJar = layout.buildDirectory.file("libs/MCT-Blast-Plaster-${version_minecraft_label}-${version}-b${version_buildnumber}${stampStage}.jar")
+def needsJar = { !builtJar.get().asFile.isFile() || JarStamp.changed(stampInputs.files, stampProps, stampRoot, stampFile.get().asFile) }
+
 tasks.register('bumpVersion') {
     outputs.upToDateWhen { false }
+    onlyIf { needsJar() }
     doLast {
         def props = new Properties()
         file('version.properties').withInputStream { props.load(it) }
@@ -244,4 +268,6 @@ if (devSyncScript != null) {
 jar {
     archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft_label}")
     archiveClassifier.set('')
+    onlyIf { needsJar() }
+    doLast { stampFile.get().asFile.text = JarStamp.hash(stampInputs.files, stampProps, stampRoot) }
 }
