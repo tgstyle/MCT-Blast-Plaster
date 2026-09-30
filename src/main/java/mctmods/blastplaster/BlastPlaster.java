@@ -11,9 +11,12 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ModConfig;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.util.Arrays;
 
 @Mod(BlastPlaster.MODID)
 public class BlastPlaster {
@@ -25,11 +28,13 @@ public class BlastPlaster {
   private static WorldEventHandler WEV;
 
   public BlastPlaster(IEventBus modEventBus, ModContainer modContainer) {
-    modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
+    modContainer.registerConfig(localConfig(), Config.SPEC, MODID + "-common.toml");
 
     modEventBus.addListener(this::setup);
     BlastPlaster.WEV = new WorldEventHandler();
   }
+
+  private static ModConfig.Type localConfig() { return Arrays.stream(ModConfig.Type.values()).filter(type -> type.name().equals("COMMON") || type.name().equals("LOCAL")).findFirst().orElseThrow(); }
 
   private void setup(final FMLCommonSetupEvent event) {
     Config.load();
