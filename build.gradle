@@ -1,5 +1,6 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import java.security.MessageDigest
 
 plugins {
     id 'java-library'
@@ -8,6 +9,20 @@ plugins {
     id 'net.neoforged.moddev.legacyforge' version '2.0.140'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.6'
     id 'eclipse'
+}
+
+class JarStamp {
+    static String hash(Set<File> files, File versionProps, File root) {
+        def digest = MessageDigest.getInstance('SHA-256')
+        files.sort { it.path }.each { File file ->
+            digest.update(root.toPath().relativize(file.toPath()).toString().getBytes('UTF-8'))
+            digest.update(file.bytes)
+        }
+        versionProps.readLines().findAll { !it.startsWith('#') && !it.startsWith('build_number=') }.sort().each { digest.update(it.getBytes('UTF-8')) }
+        digest.digest().encodeHex().toString()
+    }
+
+    static boolean changed(Set<File> files, File versionProps, File root, File stamp) { !stamp.isFile() || stamp.text != hash(files, versionProps, root) }
 }
 
 configurations.configureEach {
@@ -103,28 +118,24 @@ legacyForge {
 
     validateAccessTransformers = true
 
-    mods {
-        "${mod_id}" {
-            sourceSet sourceSets.main
-        }
-    }
+    mods.register(mod_id as String) { sourceSet(sourceSets.main) }
 
     runs {
         client {
             client()
             systemProperty 'forge.logging.markers', ''
-            systemProperty 'forge.enabledGameTestNamespaces', mod_id
+            systemProperty 'forge.enabledGameTestNamespaces', mod_id as String
             programArguments.addAll '--username', 'tgstyle', '--width', '1920', '--height', '1080'
         }
         server {
             server()
             systemProperty 'forge.logging.markers', ''
-            systemProperty 'forge.enabledGameTestNamespaces', mod_id
+            systemProperty 'forge.enabledGameTestNamespaces', mod_id as String
             programArguments.addAll '--nogui'
         }
         configureEach {
             jvmArgument '-Xmx4G'
-            gameDirectory = project.file('run')
+            gameDirectory = layout.projectDirectory.dir('run')
         }
     }
 }
@@ -153,7 +164,21 @@ if (customGradle.exists()) {
     apply from: customGradle
 }
 
+def stampInputs = files(sourceSets.main.java.srcDirs, sourceSets.main.resources.srcDirs, file('gradle.properties'), file('build.gradle'), rootProject.file('custom.gradle')).asFileTree
+def stampProps = file('version.properties')
+def stampRoot = rootDir
+def stampFile = layout.buildDirectory.file('jar-inputs.sha256')
+def stampStage = stage ? "-${stage}" : ""
+def currentVersion = "${version}-b${version_buildnumber}${stampStage}".toString()
+def builtJar = layout.buildDirectory.file("libs/MCT-BlastPlaster-${version_minecraft}-${currentVersion}.jar")
+def needsJar = { !builtJar.get().asFile.isFile() || JarStamp.changed(stampInputs.files, stampProps, stampRoot, stampFile.get().asFile) }
+
+tasks.withType(Jar).configureEach {
+    archiveVersion.set(currentVersion)
+}
+
 tasks.register('bumpVersion') {
+    onlyIf { needsJar() }
     doLast {
         def props = new Properties()
         file('version.properties').withInputStream { props.load(it) }
@@ -276,6 +301,12 @@ build.dependsOn devJar
 jar {
     archiveBaseName.set("MCT-BlastPlaster-${version_minecraft}")
     archiveClassifier.set('')
+    onlyIf { needsJar() }
+}
+
+tasks.named('reobfJar') {
+    onlyIf { needsJar() }
+    doLast { stampFile.get().asFile.text = JarStamp.hash(stampInputs.files, stampProps, stampRoot) }
 }
 
 def devSyncScript = null
