@@ -1,5 +1,6 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import java.security.MessageDigest
 
 plugins {
     id 'idea'
@@ -7,6 +8,20 @@ plugins {
     id 'net.neoforged.gradle.userdev' version '7.1.37'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.6'
     id 'eclipse'
+}
+
+class JarStamp {
+    static String hash(Set<File> files, File versionProps, File root) {
+        def digest = MessageDigest.getInstance('SHA-256')
+        files.sort { it.path }.each { File file ->
+            digest.update(root.toPath().relativize(file.toPath()).toString().getBytes('UTF-8'))
+            digest.update(file.bytes)
+        }
+        versionProps.readLines().findAll { !it.startsWith('#') && !it.startsWith('build_number=') }.sort().each { digest.update(it.getBytes('UTF-8')) }
+        digest.digest().encodeHex().toString()
+    }
+
+    static boolean changed(Set<File> files, File versionProps, File root, File stamp) { !stamp.isFile() || stamp.text != hash(files, versionProps, root) }
 }
 
 configurations.configureEach {
@@ -49,12 +64,8 @@ ext {
     mod_description = gradleProps['mod_description']
 }
 
-subsystems {
-    parchment {
-        minecraftVersion = version_minecraft
-        mappingsVersion = version_parchment
-    }
-}
+subsystems.parchment.minecraftVersion = version_minecraft
+subsystems.parchment.mappingsVersion = version_parchment
 
 def version_replaces = {
     [
@@ -102,23 +113,23 @@ runs {
 
         run.workingDirectory = project.file("run/${run.name}")
 
-        systemProperty 'forge.logging.markers', ''
-        systemProperty 'forge.logging.console.level', 'debug'
-        modSource project.sourceSets.main
+        run.systemProperty 'forge.logging.markers', ''
+        run.systemProperty 'forge.logging.console.level', 'debug'
+        run.modSource(sourceSets.main as SourceSet)
     }
 
-    client {
+    client { run ->
         println "DEBUG client block: project.mod_id=${project.mod_id}"
 
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
-        arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
+        run.systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
+        run.arguments = ['--username', 'tgstyle', '--width', '1920', '--height', '1080']
     }
 
-    server {
+    server { run ->
         println "DEBUG server block: project.mod_id=${project.mod_id}"
 
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
-        argument '--nogui'
+        run.systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id as String
+        run.argument '--nogui'
     }
 }
 
@@ -145,7 +156,21 @@ if (customGradle.exists()) {
     apply from: customGradle
 }
 
+def stampInputs = files(sourceSets.main.java.srcDirs, sourceSets.main.resources.srcDirs, file('gradle.properties'), file('build.gradle'), rootProject.file('custom.gradle')).asFileTree
+def stampProps = file('version.properties')
+def stampRoot = rootDir
+def stampFile = layout.buildDirectory.file('jar-inputs.sha256')
+def stampStage = stage ? "-${stage}" : ""
+def currentVersion = "${version}-b${version_buildnumber}${stampStage}".toString()
+def builtJar = layout.buildDirectory.file("libs/MCT-Blast-Plaster-${version_minecraft}-${currentVersion}.jar")
+def needsJar = { !builtJar.get().asFile.isFile() || JarStamp.changed(stampInputs.files, stampProps, stampRoot, stampFile.get().asFile) }
+
+tasks.withType(Jar).configureEach {
+    archiveVersion.set(currentVersion)
+}
+
 tasks.register('bumpVersion') {
+    onlyIf { needsJar() }
     doLast {
         def props = new Properties()
         file('version.properties').withInputStream { props.load(it) }
@@ -258,4 +283,6 @@ if (devSyncScript != null) {
 jar {
     archiveBaseName.set("MCT-Blast-Plaster-${version_minecraft}")
     archiveClassifier.set('')
+    onlyIf { needsJar() }
+    doLast { stampFile.get().asFile.text = JarStamp.hash(stampInputs.files, stampProps, stampRoot) }
 }
