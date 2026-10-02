@@ -15,6 +15,7 @@ import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.helper.TickContainer;
 import mctmods.blastplaster.helper.TickingHealList;
 import mctmods.blastplaster.util.BlastPlasterUtil;
+import mctmods.blastplaster.util.TreeCollector;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -32,7 +33,6 @@ import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
-import net.minecraft.world.level.block.HugeMushroomBlock;
 import net.minecraft.world.level.block.VineBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -961,30 +961,13 @@ public class WorldHealerSaveDataSupplier extends SavedData implements java.util.
   }
 
   private void addHugeMushrooms(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, Level level) {
-    Deque<BlockPos> queue = new ArrayDeque<>();
-    Set<BlockPos> visited = new HashSet<>();
-    for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
-      if (w.getState().getBlock() instanceof HugeMushroomBlock) {
-        if (visited.add(w.getPos())) { queue.add(w.getPos()); }
-      }
+    List<BlockPos> seeds = new ArrayList<>();
+    for (BlockStatePosWrapper w : toHeal) {
+      if (BlastPlasterUtil.isHugeMushroom(w.getState())) { seeds.add(w.getPos()); }
     }
-    if (queue.isEmpty()) { return; }
+    if (seeds.isEmpty()) { return; }
 
-    Set<BlockPos> extras = new HashSet<>();
-    int cap = Config.view(level).getMaxTreeSize();
-    while (!queue.isEmpty() && extras.size() < cap) {
-      BlockPos pos = queue.poll();
-      for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
-        BlockPos adj = pos.offset(side);
-        if (!visited.add(adj)) { continue; }
-        if (affectedPos.contains(adj)) { continue; }
-        if (level.getBlockState(adj).getBlock() instanceof HugeMushroomBlock) {
-          extras.add(adj);
-          queue.add(adj);
-        }
-      }
-    }
-
+    Set<BlockPos> extras = TreeCollector.mushroomsBeyond(level, seeds, Config.view(level).getMaxTreeSize(), spot -> !affectedPos.contains(spot));
     if (!extras.isEmpty()) { BlastPlaster.debug("Huge mushroom expansion added {} blocks", extras.size()); }
     for (BlockPos p : extras) {
       if (!affectedPos.contains(p)) {
