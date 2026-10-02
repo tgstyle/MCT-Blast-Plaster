@@ -22,6 +22,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.HugeMushroomBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -50,6 +51,8 @@ public class BlastPlasterUtil {
     public static void markSuppressionBypass(ItemEntity item) { item.getPersistentData().putBoolean(BYPASS_TAG, true); }
 
     public static boolean isTreeWood(BlockState state) { return Config.isLog(state) || (DT_LOADED && (TreeHelper.isBranch(state) || state.getBlock() instanceof TrunkShellBlock)); }
+
+    public static boolean isHugeMushroom(BlockState state) { return state.getBlock() instanceof HugeMushroomBlock; }
 
     public static boolean isDynamicTreesAssembly(BlockState state) {
         if (!DT_LOADED) { return false; }
