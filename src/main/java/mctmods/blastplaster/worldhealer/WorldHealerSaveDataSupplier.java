@@ -13,7 +13,6 @@ import net.minecraft.block.BlockBed;
 import net.minecraft.block.BlockDoor;
 import net.minecraft.block.BlockDoublePlant;
 import net.minecraft.block.BlockFence;
-import net.minecraft.block.BlockHugeMushroom;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockOldLog;
@@ -623,30 +622,13 @@ public class WorldHealerSaveDataSupplier extends WorldSavedData {
     }
 
     private void addHugeMushrooms(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, World world) {
-        Deque<BlockPos> queue = new ArrayDeque<>();
-        Set<BlockPos> visited = new HashSet<>();
-        for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
-            if (w.getState().getBlock() instanceof BlockHugeMushroom) {
-                if (visited.add(w.getPos())) { queue.add(w.getPos()); }
-            }
+        List<BlockPos> seeds = new ArrayList<>();
+        for (BlockStatePosWrapper w : toHeal) {
+            if (BlastPlasterUtil.isHugeMushroom(w.getState())) { seeds.add(w.getPos()); }
         }
-        if (queue.isEmpty()) { return; }
+        if (seeds.isEmpty()) { return; }
 
-        Set<BlockPos> extras = new HashSet<>();
-        int cap = Config.view(world).getMaxTreeSize();
-        while (!queue.isEmpty() && extras.size() < cap) {
-            BlockPos pos = queue.poll();
-            for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
-                BlockPos adj = pos.add(side);
-                if (!visited.add(adj)) { continue; }
-                if (affectedPos.contains(adj)) { continue; }
-                if (world.getBlockState(adj).getBlock() instanceof BlockHugeMushroom) {
-                    extras.add(adj);
-                    queue.add(adj);
-                }
-            }
-        }
-
+        Set<BlockPos> extras = TreeCollector.mushroomsBeyond(world, seeds, Config.view(world).getMaxTreeSize(), spot -> !affectedPos.contains(spot));
         if (!extras.isEmpty()) { BlastPlaster.debug("Huge mushroom expansion added {} blocks", extras.size()); }
         for (BlockPos p : extras) {
             if (!affectedPos.contains(p)) {

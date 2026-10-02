@@ -6,6 +6,7 @@ import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockHugeMushroom;
 import net.minecraft.block.BlockOldLog;
 import net.minecraft.block.BlockPlanks;
 import net.minecraft.block.properties.IProperty;
@@ -240,6 +241,8 @@ public class BlastPlasterUtil {
         if (!DT_LOADED) { return false; }
         return TreeHelper.isBranch(state) || state.getBlock() instanceof BlockTrunkShell;
     }
+
+    public static boolean isHugeMushroom(IBlockState state) { return state.getBlock() instanceof BlockHugeMushroom; }
 
     public static boolean isDynamicTrees(IBlockState state) {
         if (!DT_LOADED) { return false; }

@@ -18,6 +18,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -61,6 +62,37 @@ public final class TreeCollector {
     public static Tree expand(World world, String logKey, Set<BlockPos> seeds, int maxBlocks) {
         if (seeds.isEmpty()) { return new Tree(); }
         return gather(world, logKey, seeds, maxBlocks, unused -> true, false, true);
+    }
+
+    public static Set<BlockPos> mushroom(World world, BlockPos seed, int maxBlocks, Predicate<BlockPos> within) {
+        Set<BlockPos> whole = new HashSet<>();
+        if (!within.test(seed) || !BlastPlasterUtil.isHugeMushroom(world.getBlockState(seed))) { return whole; }
+
+        whole.add(seed.toImmutable());
+        whole.addAll(mushroomsBeyond(world, whole, maxBlocks, within));
+        return whole;
+    }
+
+    public static Set<BlockPos> mushroomsBeyond(World world, Collection<BlockPos> seeds, int maxBlocks, Predicate<BlockPos> within) {
+        Deque<BlockPos> queue = new ArrayDeque<>();
+        Set<BlockPos> visited = new HashSet<>();
+        for (BlockPos seed : seeds) {
+            if (visited.add(seed)) { queue.add(seed); }
+        }
+        Set<BlockPos> extras = new HashSet<>();
+        while (!queue.isEmpty() && extras.size() < maxBlocks) {
+            BlockPos pos = queue.poll();
+            for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
+                BlockPos adj = pos.add(side);
+                if (!visited.add(adj) || !within.test(adj)) { continue; }
+
+                if (BlastPlasterUtil.isHugeMushroom(world.getBlockState(adj))) {
+                    extras.add(adj);
+                    queue.add(adj);
+                }
+            }
+        }
+        return extras;
     }
 
     private static Tree gather(World world, String logKey, Set<BlockPos> seeds, int maxBlocks, Predicate<BlockPos> within, boolean vines, boolean seedTreesOnly) {
