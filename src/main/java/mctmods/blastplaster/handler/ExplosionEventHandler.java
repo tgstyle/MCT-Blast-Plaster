@@ -6,6 +6,7 @@ import mctmods.blastplaster.Config.ExplosionMode;
 import mctmods.blastplaster.helper.BlockStatePosWrapper;
 import mctmods.blastplaster.util.BlastPlasterUtil;
 import mctmods.blastplaster.util.BlockConversions;
+import mctmods.blastplaster.util.TreeCollector;
 import mctmods.blastplaster.worldhealer.WorldHealerSaveDataSupplier;
 
 import net.minecraft.core.BlockPos;
@@ -41,7 +42,6 @@ import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.TntBlock;
-import net.minecraft.world.level.block.HugeMushroomBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.LightBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -312,30 +312,13 @@ public class ExplosionEventHandler {
   }
 
   private void addHugeMushrooms(List<BlockStatePosWrapper> toHeal, Set<BlockPos> affectedPos, ServerLevel level) {
-    Deque<BlockPos> queue = new ArrayDeque<>();
-    Set<BlockPos> visited = new HashSet<>();
-    for (BlockStatePosWrapper w : new ArrayList<>(toHeal)) {
-      if (w.getState().getBlock() instanceof HugeMushroomBlock) {
-        if (visited.add(w.getPos())) { queue.add(w.getPos()); }
-      }
+    List<BlockPos> seeds = new ArrayList<>();
+    for (BlockStatePosWrapper w : toHeal) {
+      if (BlastPlasterUtil.isHugeMushroom(w.getState())) { seeds.add(w.getPos()); }
     }
-    if (queue.isEmpty()) { return; }
+    if (seeds.isEmpty()) { return; }
 
-    Set<BlockPos> extras = new HashSet<>();
-    int cap = Config.view(level).getMaxTreeSize();
-    while (!queue.isEmpty() && extras.size() < cap) {
-      BlockPos pos = queue.poll();
-      for (BlockPos side : BlastPlasterUtil.NEIGHBOR_POSITIONS) {
-        BlockPos adj = pos.offset(side);
-        if (!visited.add(adj)) { continue; }
-        if (affectedPos.contains(adj)) { continue; }
-        if (level.getBlockState(adj).getBlock() instanceof HugeMushroomBlock) {
-          extras.add(adj);
-          queue.add(adj);
-        }
-      }
-    }
-
+    Set<BlockPos> extras = TreeCollector.mushroomsBeyond(level, seeds, Config.view(level).getMaxTreeSize(), spot -> !affectedPos.contains(spot));
     if (!extras.isEmpty()) { BlastPlaster.debug("Huge mushroom expansion added {} blocks", extras.size()); }
     for (BlockPos p : extras) {
       if (!affectedPos.contains(p)) {
