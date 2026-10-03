@@ -90,7 +90,7 @@ def jsonPatterns = ["**/*.json", "**/*.mcmeta"]
 
 processResources {
     duplicatesStrategy = DuplicatesStrategy.FAIL
-    inputs.properties(version_replaces())
+    inputs.property('version_replaces', provider { version_replaces().collectEntries { k, v -> [k, v?.toString()] } })
     filesMatching("META-INF/neoforge.mods.toml") {
         expand version_replaces()
     }
