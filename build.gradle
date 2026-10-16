@@ -83,7 +83,8 @@ minecraft {
     username = 'TGstyle'
     extraRunJvmArguments.addAll(
             '-Xmx4G',
-            '-Dforge.logging.console.level=debug'
+            '-Dforge.logging.console.level=debug',
+            '-XX:StartFlightRecording=maxsize=512M,dumponexit=true,filename=logs/profile.jfr,settings=profile'
     )
 }
 
